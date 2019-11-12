@@ -309,6 +309,15 @@ ext_libdrm = declare_dependency(
   include_directories : [inc_root, inc_drm],
 )
 
+foreach header : ['libsync.h', 'xf86drm.h', 'xf86drmMode.h']
+  if not cc.compiles('#include "@0@"'.format(header),
+      name : 'header @0@ is self-contained'.format(header),
+      include_directories : [inc_root, inc_drm],
+    )
+    error('Header is not self-contained: ' + header)
+  endif
+endforeach
+
 install_headers('libsync.h', 'xf86drm.h', 'xf86drmMode.h')
 install_headers(
   'include/drm/drm.h', 'include/drm/drm_fourcc.h', 'include/drm/drm_mode.h',
