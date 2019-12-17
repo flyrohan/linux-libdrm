@@ -75,6 +75,7 @@ debian:
         -D vc4=true
         -D vmwgfx=true
         ${CROSS+--cross /cross_file-$CROSS.txt}
+        $MESON_EXTRA_ARGS
     - ninja -C build
     - ninja -C build test
     - DESTDIR=$PWD/install ninja -C build install
@@ -110,6 +111,11 @@ meson-ppc64el:
   extends: meson-x86_64
   variables:
     CROSS: ppc64el
+
+meson-c99:
+  extends: meson-x86_64
+  variables:
+    MESON_EXTRA_ARGS: -D c_std=c99
 
 meson-arch-daily:
   rules:
