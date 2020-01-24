@@ -38,7 +38,7 @@ debian-x86_64:
     - .debian@container-ifnot-exists
     - .container
   variables:
-    DEBIAN_TAG: &debian_x86_64 "2019-11-16"
+    DEBIAN_TAG: &debian_x86_64 "2020-01-23"
 .use-debian-x86_64:
   variables:
     TAG: *debian_x86_64

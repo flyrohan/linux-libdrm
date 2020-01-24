@@ -41,6 +41,7 @@ apt-get install -y --no-remove \
   python3-pip \
   python3-wheel \
   python3-setuptools \
+  qemu-user \
   valgrind \
   xsltproc
 
@@ -59,6 +60,11 @@ for arch in ${CROSS_ARCHITECTURES[@]}; do
   # Work around a bug in debcrossgen that should be fixed in the next release
   if [ $arch = i386 ]; then
     sed -i "s|cpu_family = 'i686'|cpu_family = 'x86'|g" $cross_file
+  fi
+
+  # Thanks to qemu we can run tests without a wrapper
+  if [ $arch = ppc64el ]; then
+    sed -i "/\[properties\]/a needs_exe_wrapper = False" $cross_file
   fi
 done
 
