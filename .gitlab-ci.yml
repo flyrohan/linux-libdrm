@@ -46,6 +46,19 @@ debian-x86_64:
   needs:
     - debian-x86_64
 
+debian-arm64:
+  extends:
+    - .debian@container-ifnot-exists@arm64v8
+    - .container
+  variables:
+    DEBIAN_TAG: &debian_arm64 "2020-01-23"
+.use-debian-arm64:
+  variables:
+    TAG: *debian_arm64
+  image: "$CI_REGISTRY_IMAGE/debian/debian-arm64:$TAG"
+  needs:
+    - debian-arm64
+
 
 # BUILD
 
@@ -93,12 +106,15 @@ meson-i386:
     CROSS: i386
 
 meson-aarch64:
-  extends: meson-x86_64
-  variables:
-    CROSS: arm64
+  extends:
+    - .ci-run-policy
+    - .use-debian-arm64
+    - .meson-build
+  tags:
+    - aarch64
 
 meson-armhf:
-  extends: meson-x86_64
+  extends: meson-aarch64
   variables:
     CROSS: armhf
 

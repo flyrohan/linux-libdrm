@@ -4,7 +4,7 @@ set -o xtrace
 
 export DEBIAN_FRONTEND=noninteractive
 
-CROSS_ARCHITECTURES=(i386 ppc64el)
+CROSS_ARCHITECTURES=(armhf)
 for arch in ${CROSS_ARCHITECTURES[@]}; do
   dpkg --add-architecture $arch
 done
@@ -41,6 +41,7 @@ apt-get install -y --no-remove \
   python3-pip \
   python3-wheel \
   python3-setuptools \
+  qemu-user \
   valgrind \
   xsltproc
 
@@ -55,11 +56,6 @@ for arch in ${CROSS_ARCHITECTURES[@]}; do
 
   # Generate cross build files for Meson
   /usr/share/meson/debcrossgen --arch $arch -o $cross_file
-
-  # Work around a bug in debcrossgen that should be fixed in the next release
-  if [ $arch = i386 ]; then
-    sed -i "s|cpu_family = 'i686'|cpu_family = 'x86'|g" $cross_file
-  fi
 done
 
 apt-get purge -y \
