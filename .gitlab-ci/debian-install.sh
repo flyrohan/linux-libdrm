@@ -62,6 +62,10 @@ for arch in ${CROSS_ARCHITECTURES[@]}; do
   fi
 done
 
+apt-get purge -y \
+  meson
+
+apt-get autoremove -y --purge
 
 # Test that the oldest Meson version we claim to support is still supported
 pip3 install meson==0.43
