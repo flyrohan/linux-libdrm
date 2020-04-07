@@ -57,6 +57,7 @@ drmGetContextPrivateMapping
 drmGetContextTag
 drmGetDevice
 drmGetDevice2
+drmGetDeviceFromMajorMinor
 drmGetDeviceNameFromFd
 drmGetDeviceNameFromFd2
 drmGetDevices

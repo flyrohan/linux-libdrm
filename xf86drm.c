@@ -3788,9 +3788,10 @@ drm_device_has_rdev(drmDevicePtr device, dev_t find_rdev)
 #define MAX_DRM_NODES 256
 
 /**
- * Get information about the opened drm device
+ * Get information about a drm device from major and minor number
  *
- * \param fd file descriptor of the drm device
+ * \param maj major number of the drm device
+ * \param min minor number of the drm device
  * \param flags feature/behaviour bitmask
  * \param device the address of a drmDevicePtr where the information
  *               will be allocated in stored
@@ -3800,7 +3801,8 @@ drm_device_has_rdev(drmDevicePtr device, dev_t find_rdev)
  * \note Unlike drmGetDevice it does not retrieve the pci device revision field
  * unless the DRM_DEVICE_GET_PCI_REVISION \p flag is set.
  */
-drm_public int drmGetDevice2(int fd, uint32_t flags, drmDevicePtr *device)
+drm_public int drmGetDeviceFromMajorMinor(int maj, int min,
+                                          uint32_t flags, drmDevicePtr *device)
 {
 #ifdef __OpenBSD__
     /*
@@ -3815,16 +3817,10 @@ drm_public int drmGetDevice2(int fd, uint32_t flags, drmDevicePtr *device)
     int              node_type, subsystem_type;
     int              maj, min, n, ret;
 
-    if (fd == -1 || device == NULL)
+    if (device == NULL)
         return -EINVAL;
 
-    if (fstat(fd, &sbuf))
-        return -errno;
-
-    maj = major(sbuf.st_rdev);
-    min = minor(sbuf.st_rdev);
-
-    if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode))
+    if (!drmNodeIsDRM(maj, min))
         return -EINVAL;
 
     node_type = drmGetMinorType(min);
@@ -3857,26 +3853,19 @@ drm_public int drmGetDevice2(int fd, uint32_t flags, drmDevicePtr *device)
     drmDevicePtr d;
     DIR *sysdir;
     struct dirent *dent;
-    struct stat sbuf;
     int subsystem_type;
-    int maj, min;
     int ret, i, node_count;
     dev_t find_rdev;
 
     if (drm_device_validate_flags(flags))
         return -EINVAL;
 
-    if (fd == -1 || device == NULL)
+    if (device == NULL)
         return -EINVAL;
 
-    if (fstat(fd, &sbuf))
-        return -errno;
+    find_rdev = makedev(maj, min);
 
-    find_rdev = sbuf.st_rdev;
-    maj = major(sbuf.st_rdev);
-    min = minor(sbuf.st_rdev);
-
-    if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode))
+    if (!drmNodeIsDRM(maj, min))
         return -EINVAL;
 
     subsystem_type = drmParseSubsystemType(maj, min);
@@ -3923,6 +3912,39 @@ drm_public int drmGetDevice2(int fd, uint32_t flags, drmDevicePtr *device)
         return -ENODEV;
     return 0;
 #endif
+}
+
+/**
+ * Get information about the opened drm device
+ *
+ * \param fd file descriptor of the drm device
+ * \param flags feature/behaviour bitmask
+ * \param device the address of a drmDevicePtr where the information
+ *               will be allocated in stored
+ *
+ * \return zero on success, negative error code otherwise.
+ *
+ * \note Unlike drmGetDevice it does not retrieve the pci device revision field
+ * unless the DRM_DEVICE_GET_PCI_REVISION \p flag is set.
+ */
+drm_public int drmGetDevice2(int fd, uint32_t flags, drmDevicePtr *device)
+{
+    struct stat sbuf;
+    int maj, min;
+
+    if (fd == -1)
+        return -EINVAL;
+
+    if (fstat(fd, &sbuf))
+        return -errno;
+
+    maj = major(sbuf.st_rdev);
+    min = minor(sbuf.st_rdev);
+
+    if (!S_ISCHR(sbuf.st_mode))
+        return -EINVAL;
+
+    return drmGetDeviceFromMajorMinor(maj, min, flags, device);
 }
 
 /**
