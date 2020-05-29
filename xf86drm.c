@@ -2997,47 +2997,6 @@ static char *drmGetMinorNameForFD(int fd, int type)
 
     closedir(sysdir);
     return NULL;
-#elif defined(__FreeBSD__)
-    struct stat sbuf;
-    char dname[SPECNAMELEN];
-    const char *mname;
-    char name[SPECNAMELEN];
-    int id, maj, min, nodetype, i;
-
-    if (fstat(fd, &sbuf))
-        return NULL;
-
-    maj = major(sbuf.st_rdev);
-    min = minor(sbuf.st_rdev);
-
-    if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode))
-        return NULL;
-
-    if (!devname_r(sbuf.st_rdev, S_IFCHR, dname, sizeof(dname)))
-        return NULL;
-
-    /* Get the node type represented by fd so we can deduce the target name */
-    nodetype = drmGetMinorType(maj, min);
-    if (nodetype == -1)
-        return (NULL);
-    mname = drmGetMinorName(type);
-
-    for (i = 0; i < SPECNAMELEN; i++) {
-        if (isalpha(dname[i]) == 0 && dname[i] != '/')
-           break;
-    }
-    if (dname[i] == '\0')
-        return (NULL);
-
-    id = (int)strtol(&dname[i], NULL, 10);
-    id -= drmGetMinorBase(nodetype);
-    snprintf(name, sizeof(name), DRM_DIR_NAME "/%s%d", mname,
-         id + drmGetMinorBase(type));
-
-    if (stat(name, &sbuf))
-        return NULL;
-
-    return strdup(name);
 #else
     /* Use buggy fallback helper - use the provided node type */
     return buggyMinorNameForFD(fd, type);
