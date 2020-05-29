@@ -4317,8 +4317,6 @@ drm_public char *drmGetDeviceNameFromFd2(int fd)
     free(value);
 
     return strdup(path);
-#elif defined(__FreeBSD__)
-    return drmGetDeviceNameFromFd(fd);
 #else
     struct stat      sbuf;
     char             node[PATH_MAX + 1];
@@ -4342,6 +4340,10 @@ drm_public char *drmGetDeviceNameFromFd2(int fd)
     dev_name = drmGetDeviceName(node_type);
     if (!dev_name)
         return NULL;
+
+#if defined(__FreeBSD__)
+    min = freebsd_minor(maj, min);
+#endif
 
     n = snprintf(node, PATH_MAX, dev_name, DRM_DIR_NAME, min);
     if (n == -1 || n >= PATH_MAX)
