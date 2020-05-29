@@ -2799,19 +2799,6 @@ drm_public int drmIsMaster(int fd)
 
 drm_public char *drmGetDeviceNameFromFd(int fd)
 {
-#ifdef __FreeBSD__
-    struct stat sbuf;
-    int maj, min;
-    int nodetype;
-
-    if (fstat(fd, &sbuf))
-        return NULL;
-
-    maj = major(sbuf.st_rdev);
-    min = minor(sbuf.st_rdev);
-    nodetype = drmGetMinorType(maj, min);
-    return drmGetMinorNameForFD(fd, nodetype);
-#else
     char name[128];
     struct stat sbuf;
     dev_t d;
@@ -2834,7 +2821,6 @@ drm_public char *drmGetDeviceNameFromFd(int fd)
         return NULL;
 
     return strdup(name);
-#endif
 }
 
 static bool drmNodeIsDRM(int maj, int min)
