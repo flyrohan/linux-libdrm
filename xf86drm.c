@@ -3195,18 +3195,7 @@ static int get_sysctl_pci_bus_info(int maj, int min, drmPciBusInfoPtr info)
      * This is a possibility in FreeBSD but for now there is no good way for
      * obtaining the info.
      */
-    switch (type) {
-    case DRM_NODE_PRIMARY:
-         break;
-    case DRM_NODE_CONTROL:
-         id -= 64;
-         break;
-    case DRM_NODE_RENDER:
-         id -= 128;
-          break;
-    }
-    if (id < 0)
-        return -EINVAL;
+    id -= drmGetMinorBase(type);
 
     if (snprintf(sysctl_name, sizeof(sysctl_name), "hw.dri.%d.busid", id) <= 0)
       return -EINVAL;
