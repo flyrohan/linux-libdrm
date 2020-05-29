@@ -2902,6 +2902,52 @@ drm_public int drmPrimeFDToHandle(int fd, int prime_fd, uint32_t *handle)
     return 0;
 }
 
+#ifndef __linux__
+static char *buggyMinorNameForFD(int fd, int type)
+{
+#warning "Using unreliable codepath - see inline comment"
+    /*
+     * This (fallback) codepath is buggy, since it assumes that any DRM driver
+     * will expose both primary and render node. If they do not, then cardX
+     * and renderD(X+128) will not point to the same device.
+     */
+    struct stat      sbuf;
+    char             node[PATH_MAX + 1];
+    const char      *dev_name;
+    int              maj, min, n;
+
+    if (fstat(fd, &sbuf))
+        return NULL;
+
+    maj = major(sbuf.st_rdev);
+    min = minor(sbuf.st_rdev);
+
+    if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode))
+        return NULL;
+
+    /* Auto-detect the type as needed */
+    if (type == -1)
+        type = drmGetMinorType(maj, min);
+
+    if (type == -1)
+        return NULL;
+
+    dev_name = drmGetDeviceName(type);
+    if (!dev_name)
+        return NULL;
+
+#if defined(__FreeBSD__)
+    min = freebsd_minor(maj, min);
+#endif
+
+    n = snprintf(node, PATH_MAX, dev_name, DRM_DIR_NAME, min);
+    if (n == -1 || n >= PATH_MAX)
+      return NULL;
+
+    return strdup(node);
+}
+#endif
+
 static char *drmGetMinorNameForFD(int fd, int type)
 {
 #ifdef __linux__
@@ -4304,44 +4350,8 @@ drm_public char *drmGetDeviceNameFromFd2(int fd)
 
     return strdup(path);
 #else
-#warning "Using unreliable codepath - see inline comment"
-    /*
-     * This (fallback) codepath is buggy, since it assumes that any DRM driver
-     * will expose both primary and render node. If they do not, then cardX
-     * and renderD(X+128) will not point to the same device.
-     */
-    struct stat      sbuf;
-    char             node[PATH_MAX + 1];
-    const char      *dev_name;
-    int              node_type;
-    int              maj, min, n;
-
-    if (fstat(fd, &sbuf))
-        return NULL;
-
-    maj = major(sbuf.st_rdev);
-    min = minor(sbuf.st_rdev);
-
-    if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode))
-        return NULL;
-
-    node_type = drmGetMinorType(maj, min);
-    if (node_type == -1)
-        return NULL;
-
-    dev_name = drmGetDeviceName(node_type);
-    if (!dev_name)
-        return NULL;
-
-#if defined(__FreeBSD__)
-    min = freebsd_minor(maj, min);
-#endif
-
-    n = snprintf(node, PATH_MAX, dev_name, DRM_DIR_NAME, min);
-    if (n == -1 || n >= PATH_MAX)
-      return NULL;
-
-    return strdup(node);
+    /* Use buggy fallback helper - auto-detect the node type */
+    return buggyMinorNameForFD(fd, -1);
 #endif
 }
 
