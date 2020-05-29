@@ -3184,16 +3184,16 @@ static int get_sysctl_pci_bus_info(int maj, int min, drmPciBusInfoPtr info)
     id -= drmGetMinorBase(type);
 
     if (snprintf(sysctl_name, sizeof(sysctl_name), "hw.dri.%d.busid", id) <= 0)
-      return -EINVAL;
+       return -EINVAL;
     sysctl_len = sizeof(sysctl_val);
     if (sysctlbyname(sysctl_name, sysctl_val, &sysctl_len, NULL, 0))
-      return -EINVAL;
+       return -EINVAL;
 
     #define bus_fmt "pci:%04x:%02x:%02x.%u"
 
     nelem = sscanf(sysctl_val, bus_fmt, &domain, &bus, &dev, &func);
     if (nelem != 4)
-      return -EINVAL;
+       return -EINVAL;
     info->domain = domain;
     info->bus = bus;
     info->dev = dev;
