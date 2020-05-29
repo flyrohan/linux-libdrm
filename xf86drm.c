@@ -4318,6 +4318,12 @@ drm_public char *drmGetDeviceNameFromFd2(int fd)
 
     return strdup(path);
 #else
+#warning "Using unreliable codepath - see inline comment"
+    /*
+     * This (fallback) codepath is buggy, since it assumes that any DRM driver
+     * will expose both primary and render node. If they do not, then cardX
+     * and renderD(X+128) will not point to the same device.
+     */
     struct stat      sbuf;
     char             node[PATH_MAX + 1];
     const char      *dev_name;
