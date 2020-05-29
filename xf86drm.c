@@ -2944,6 +2944,9 @@ static char *buggyMinorNameForFD(int fd, int type)
     if (n == -1 || n >= PATH_MAX)
       return NULL;
 
+    if (stat(node, &sbuf))
+        return NULL;
+
     return strdup(node);
 }
 #endif
@@ -3036,32 +3039,8 @@ static char *drmGetMinorNameForFD(int fd, int type)
 
     return strdup(name);
 #else
-    struct stat sbuf;
-    char buf[PATH_MAX + 1];
-    const char *dev_name = drmGetDeviceName(type);
-    unsigned int maj, min;
-    int n;
-
-    if (fstat(fd, &sbuf))
-        return NULL;
-
-    maj = major(sbuf.st_rdev);
-    min = minor(sbuf.st_rdev);
-
-    if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode))
-        return NULL;
-
-    if (!dev_name)
-        return NULL;
-
-    n = snprintf(buf, sizeof(buf), dev_name, DRM_DIR_NAME, min);
-    if (n == -1 || n >= sizeof(buf))
-        return NULL;
-
-    if (stat(buf, &sbuf))
-        return NULL;
-
-    return strdup(buf);
+    /* Use buggy fallback helper - use the provided node type */
+    return buggyMinorNameForFD(fd, type);
 #endif
 }
 
