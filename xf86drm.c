@@ -538,27 +538,35 @@ static int drmGetMinorBase(int type)
     };
 }
 
-static int drmGetMinorType(int major, int minor)
-{
 #ifdef __FreeBSD__
+static int freebsd_minor(int major, int minor)
+{
     char name[SPECNAMELEN];
     int id;
 
     if (!devname_r(makedev(major, minor), S_IFCHR, name, sizeof(name)))
         return -1;
 
-    if (sscanf(name, "drm/%d", &id) != 1) {
-        // If not in /dev/drm/ we have the type in the name
-        if (sscanf(name, "dri/card%d\n", &id) >= 1)
-           return DRM_NODE_PRIMARY;
-        else if (sscanf(name, "dri/control%d\n", &id) >= 1)
-           return DRM_NODE_CONTROL;
-        else if (sscanf(name, "dri/renderD%d\n", &id) >= 1)
-           return DRM_NODE_RENDER;
-        return -1;
-    }
+    /* Handle both /dev/drm and /dev/dri
+     * FreeBSD on amd64/i386/powerpc external kernel modules create node in
+     * in /dev/drm/ and links in /dev/dri while a WIP in kernel driver creates
+     * only device nodes in /dev/dri/ */
+    if (sscanf(name, "drm/%d", &id) == 1)
+        return id;
 
-    minor = id;
+    if (sscanf(name, "dri/card%d\n", &id) == 1 ||
+        sscanf(name, "dri/control%d\n", &id) == 1 ||
+        sscanf(name, "dri/renderD%d\n", &id) == 1)
+        return id;
+
+    return -1;
+}
+#endif
+
+static int drmGetMinorType(int major, int minor)
+{
+#ifdef __FreeBSD__
+    minor = freebsd_minor(major, minor);
 #endif
     int type = minor >> 6;
 
@@ -2972,11 +2980,6 @@ static char *drmGetMinorNameForFD(int fd, int type)
 
     if (!devname_r(sbuf.st_rdev, S_IFCHR, dname, sizeof(dname)))
         return NULL;
-
-    /* Handle both /dev/drm and /dev/dri
-     * FreeBSD on amd64/i386/powerpc external kernel modules create node in
-     * in /dev/drm/ and links in /dev/dri while a WIP in kernel driver creates
-     * only device nodes in /dev/dri/ */
 
     /* Get the node type represented by fd so we can deduce the target name */
     nodetype = drmGetMinorType(maj, min);
