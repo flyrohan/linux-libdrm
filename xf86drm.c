@@ -3177,23 +3177,17 @@ get_pci_path(int maj, int min, char *pci_path)
 #ifdef __FreeBSD__
 static int get_sysctl_pci_bus_info(int maj, int min, drmPciBusInfoPtr info)
 {
-    char dname[SPECNAMELEN];
     char sysctl_name[16];
     char sysctl_val[256];
     size_t sysctl_len;
     int id, type, nelem;
-    unsigned int rdev, majmin, domain, bus, dev, func;
+    unsigned int domain, bus, dev, func;
 
-    rdev = makedev(maj, min);
-    if (!devname_r(rdev, S_IFCHR, dname, sizeof(dname)))
-      return -EINVAL;
-
-    if (sscanf(dname, "drm/%d\n", &id) != 1)
-        return -EINVAL;
     type = drmGetMinorType(maj, min);
     if (type == -1)
         return -EINVAL;
 
+    id = freebsd_minor(maj, min);
     /* BUG: This above section is iffy, since it mandates that a driver will
      * create both card and render node.
      * If it does not, the next DRM device will create card#X and
