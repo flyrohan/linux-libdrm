@@ -346,6 +346,15 @@ typedef struct _drmModeObjectProperties {
 	uint64_t *prop_values;
 } drmModeObjectProperties, *drmModeObjectPropertiesPtr;
 
+typedef struct _drmModeFormats {
+	uint32_t count;
+	struct {
+		uint32_t format;
+		uint32_t count_modifiers;
+		uint64_t *modifiers;
+	} formats[];
+} drmModeFormats, *drmModeFormatsPtr;
+
 typedef struct _drmModePlane {
 	uint32_t count_formats;
 	uint32_t *formats;
@@ -496,6 +505,10 @@ extern drmModePropertyPtr drmModeGetProperty(int fd, uint32_t propertyId);
 extern void drmModeFreeProperty(drmModePropertyPtr ptr);
 
 extern drmModePropertyBlobPtr drmModeGetPropertyBlob(int fd, uint32_t blob_id);
+extern int drmModePopulateFormats(drmModePropertyBlobPtr ptr,
+				  drmModeFormatsPtr *out_formats);
+extern drmModeFormatsPtr drmModeAllocFormats(const uint32_t formats_count);
+extern void drmModeFreeFormats(drmModeFormatsPtr ptr);
 extern void drmModeFreePropertyBlob(drmModePropertyBlobPtr ptr);
 extern int drmModeConnectorSetProperty(int fd, uint32_t connector_id, uint32_t property_id,
 				    uint64_t value);

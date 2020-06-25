@@ -91,6 +91,7 @@ drmMarkBufs
 drmModeAddFB
 drmModeAddFB2
 drmModeAddFB2WithModifiers
+drmModeAllocFormats
 drmModeAtomicAddProperty
 drmModeAtomicAlloc
 drmModeAtomicCommit
@@ -113,6 +114,7 @@ drmModeFreeCrtc
 drmModeFreeEncoder
 drmModeFreeFB
 drmModeFreeFB2
+drmModeFreeFormats
 drmModeFreeModeInfo
 drmModeFreeObjectProperties
 drmModeFreePlane
@@ -138,6 +140,7 @@ drmModeObjectGetProperties
 drmModeObjectSetProperty
 drmModePageFlip
 drmModePageFlipTarget
+drmModePopulateFormats
 drmModeRevokeLease
 drmModeRmFB
 drmModeSetCrtc
