@@ -42,11 +42,13 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <sys/ioctl.h>
-#if HAVE_SYS_SYSCTL_H
-#include <sys/sysctl.h>
-#endif
 #include <stdio.h>
 #include <stdbool.h>
+
+#if defined(__FreeBSD__)
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#endif
 
 #include "libdrm_macros.h"
 #include "xf86drmMode.h"

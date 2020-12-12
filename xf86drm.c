@@ -57,12 +57,11 @@
 #ifdef MAJOR_IN_SYSMACROS
 #include <sys/sysmacros.h>
 #endif
-#if HAVE_SYS_SYSCTL_H
-#include <sys/sysctl.h>
-#endif
 #include <math.h>
 
 #if defined(__FreeBSD__)
+#include <sys/types.h>
+#include <sys/sysctl.h>
 #include <sys/param.h>
 #include <sys/pciio.h>
 #endif
