@@ -3933,15 +3933,13 @@ free_device:
 }
 
 static int
-process_device(drmDevicePtr *device, const char *d_name,
+process_device(drmDevicePtr *device, const char *node,
                int req_subsystem_type,
                bool fetch_deviceinfo, uint32_t flags)
 {
-    char node[PATH_MAX + 1];
     int subsystem_type;
     int maj, min;
 
-    snprintf(node, PATH_MAX, "%s/%s", DRM_DIR_NAME, d_name);
     if (node_to_maj_min(node, &maj, &min))
         return -1;
 
@@ -3969,14 +3967,12 @@ process_device(drmDevicePtr *device, const char *d_name,
 }
 
 static int
-process_device_node(drmDevicePtr device, const char *d_name)
+process_device_node(drmDevicePtr device, const char *node, const *d_name)
 {
     struct stat sbuf;
-    char node[PATH_MAX + 1];
     int type;
 
     type = drmGetNodeType(d_name);
-    snprintf(node, PATH_MAX, "%s/%s", DRM_DIR_NAME, d_name);
     if (type < 0 || stat(node, &sbuf))
         return -1;
 
@@ -4056,6 +4052,7 @@ drm_public int drmGetDevice2(int fd, uint32_t flags, drmDevicePtr *device)
     DIR *sysdir;
     struct dirent *dent;
     struct stat sbuf;
+    char node[PATH_MAX + 1];
     int subsystem_type;
     int maj, min;
     int ret, i, node_count;
@@ -4085,11 +4082,13 @@ drm_public int drmGetDevice2(int fd, uint32_t flags, drmDevicePtr *device)
 
     i = 0;
     while ((dent = readdir(sysdir))) {
-        ret = process_device(&d, dent->d_name, subsystem_type, true, flags);
+        snprintf(node, PATH_MAX, "%s/%s", DRM_DIR_NAME, dent->d_name);
+
+        ret = process_device(&d, node, subsystem_type, true, flags);
         if (ret)
             continue;
 
-        ret = process_device_node(d, dent->d_name);
+        ret = process_device_node(d, node, dent->d_name);
         if (ret) {
             drmFreeDevice(&d);
             continue;
@@ -4163,6 +4162,7 @@ drm_public int drmGetDevices2(uint32_t flags, drmDevicePtr devices[],
     drmDevicePtr device;
     DIR *sysdir;
     struct dirent *dent;
+    char node[PATH_MAX + 1];
     int ret, i, node_count, device_count;
 
     if (drm_device_validate_flags(flags))
@@ -4174,11 +4174,13 @@ drm_public int drmGetDevices2(uint32_t flags, drmDevicePtr devices[],
 
     i = 0;
     while ((dent = readdir(sysdir))) {
-        ret = process_device(&device, dent->d_name, -1, devices != NULL, flags);
+        snprintf(node, PATH_MAX, "%s/%s", DRM_DIR_NAME, dent->d_name);
+
+        ret = process_device(&device, node, -1, devices != NULL, flags);
         if (ret)
             continue;
 
-        ret = process_device_node(device, dent->d_name);
+        ret = process_device_node(device, node, dent->d_name);
         if (ret) {
             drmFreeDevice(&device);
             continue;
