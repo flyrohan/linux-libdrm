@@ -4039,6 +4039,9 @@ drm_device_has_rdev(drmDevicePtr device, dev_t find_rdev)
  */
 #define MAX_DRM_NODES 256
 
+static char *
+drmGetDeviceNameFromMajMin(int maj, int min);
+
 /**
  * Get information about the opened drm device
  *
@@ -4054,27 +4057,16 @@ drm_device_has_rdev(drmDevicePtr device, dev_t find_rdev)
  */
 drm_public int drmGetDevice2(int fd, uint32_t flags, drmDevicePtr *device)
 {
-    drmDevicePtr local_devices[MAX_DRM_NODES];
     drmDevicePtr d;
-    DIR *sysdir;
-    struct dirent *dent;
-    struct stat sbuf;
-    char node[PATH_MAX + 1];
+    char *node;
     int subsystem_type;
-    int maj, min;
-    int ret, i, node_count;
-    dev_t find_rdev;
+    int maj, min, ret;
 
     if (drm_device_validate_flags(flags))
         return -EINVAL;
 
     if (fd == -1 || device == NULL)
         return -EINVAL;
-
-    if (fstat(fd, &sbuf))
-        return -errno;
-
-    find_rdev = sbuf.st_rdev;
 
     if (fd_to_maj_min(fd, &maj, &min))
         return -errno;
@@ -4083,52 +4075,24 @@ drm_public int drmGetDevice2(int fd, uint32_t flags, drmDevicePtr *device)
     if (subsystem_type < 0)
         return subsystem_type;
 
-    sysdir = opendir(DRM_DIR_NAME);
-    if (!sysdir)
-        return -errno;
+    node = drmGetDeviceNameFromMajMin(maj, min);
+    if (!node)
+        return -EINVAL;
 
-    i = 0;
-    while ((dent = readdir(sysdir))) {
-        snprintf(node, PATH_MAX, "%s/%s", DRM_DIR_NAME, dent->d_name);
-
-        ret = process_device(&d, node, subsystem_type, true, flags);
-        if (ret)
-            continue;
-
-        ret = process_device_nodes(d, node);
-        if (ret) {
-            drmFreeDevice(&d);
-            continue;
-        }
-
-        if (i >= MAX_DRM_NODES) {
-            fprintf(stderr, "More than %d drm nodes detected. "
-                    "Please report a bug - that should not happen.\n"
-                    "Skipping extra nodes\n", MAX_DRM_NODES);
-            break;
-        }
-        local_devices[i] = d;
-        i++;
-    }
-    node_count = i;
-
-    drmFoldDuplicatedDevices(local_devices, node_count);
-
-    *device = NULL;
-
-    for (i = 0; i < node_count; i++) {
-        if (!local_devices[i])
-            continue;
-
-        if (drm_device_has_rdev(local_devices[i], find_rdev))
-            *device = local_devices[i];
-        else
-            drmFreeDevice(&local_devices[i]);
-    }
-
-    closedir(sysdir);
-    if (*device == NULL)
+    ret = process_device(&d, node, subsystem_type, true, flags);
+    if (ret) {
+        free(node);
         return -ENODEV;
+    }
+
+    ret = process_device_nodes(d, node);
+    free(node);
+    if (ret) {
+        drmFreeDevice(&d);
+        return -ENODEV;
+    }
+
+    *device = d;
     return 0;
 }
 
