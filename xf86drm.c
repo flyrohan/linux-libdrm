@@ -4035,57 +4035,6 @@ drm_device_has_rdev(drmDevicePtr device, dev_t find_rdev)
  */
 drm_public int drmGetDevice2(int fd, uint32_t flags, drmDevicePtr *device)
 {
-#ifdef __OpenBSD__
-    /*
-     * DRI device nodes on OpenBSD are not in their own directory, they reside
-     * in /dev along with a large number of statically generated /dev nodes.
-     * Avoid stat'ing all of /dev needlessly by implementing this custom path.
-     */
-    drmDevicePtr     d;
-    struct stat      sbuf;
-    char             node[PATH_MAX + 1];
-    const char      *dev_name;
-    int              node_type, subsystem_type;
-    int              maj, min, n, ret;
-
-    if (fd == -1 || device == NULL)
-        return -EINVAL;
-
-    if (fstat(fd, &sbuf))
-        return -errno;
-
-    maj = major(sbuf.st_rdev);
-    min = minor(sbuf.st_rdev);
-
-    if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode))
-        return -EINVAL;
-
-    node_type = drmGetMinorType(maj, min);
-    if (node_type == -1)
-        return -ENODEV;
-
-    dev_name = drmGetDeviceName(node_type);
-    if (!dev_name)
-        return -EINVAL;
-
-    n = snprintf(node, PATH_MAX, dev_name, DRM_DIR_NAME, min);
-    if (n == -1 || n >= PATH_MAX)
-      return -errno;
-    if (stat(node, &sbuf))
-        return -EINVAL;
-
-    subsystem_type = drmParseSubsystemType(maj, min);
-    if (subsystem_type != DRM_BUS_PCI)
-        return -ENODEV;
-
-    ret = drmProcessPciDevice(&d, node, node_type, maj, min, true, flags);
-    if (ret)
-        return ret;
-
-    *device = d;
-
-    return 0;
-#else
     drmDevicePtr local_devices[MAX_DRM_NODES];
     drmDevicePtr d;
     DIR *sysdir;
@@ -4155,7 +4104,6 @@ drm_public int drmGetDevice2(int fd, uint32_t flags, drmDevicePtr *device)
     if (*device == NULL)
         return -ENODEV;
     return 0;
-#endif
 }
 
 /**
