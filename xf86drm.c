@@ -2863,6 +2863,25 @@ fd_to_maj_min(int fd, int *maj, int *min)
     return 0;
 }
 
+static int
+node_to_maj_min(const char *node, int *maj, int *min)
+{
+    struct stat sbuf;
+
+    if (stat(node, &sbuf))
+        return -1;
+
+    *maj = major(sbuf.st_rdev);
+    *min = minor(sbuf.st_rdev);
+
+    if (!drmNodeIsDRM(*maj, *min) || !S_ISCHR(sbuf.st_mode)) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    return 0;
+}
+
 drm_public int drmGetNodeTypeFromFd(int fd)
 {
     int maj, min, type, ret;
@@ -3918,19 +3937,12 @@ process_device(drmDevicePtr *device, const char *d_name,
                int req_subsystem_type,
                bool fetch_deviceinfo, uint32_t flags)
 {
-    struct stat sbuf;
     char node[PATH_MAX + 1];
     int subsystem_type;
-    unsigned int maj, min;
+    int maj, min;
 
     snprintf(node, PATH_MAX, "%s/%s", DRM_DIR_NAME, d_name);
-    if (stat(node, &sbuf))
-        return -1;
-
-    maj = major(sbuf.st_rdev);
-    min = minor(sbuf.st_rdev);
-
-    if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode))
+    if (node_to_maj_min(node, &maj, &min))
         return -1;
 
     subsystem_type = drmParseSubsystemType(maj, min);
