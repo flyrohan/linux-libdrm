@@ -2911,7 +2911,7 @@ drm_public int drmPrimeFDToHandle(int fd, int prime_fd, uint32_t *handle)
 }
 
 #ifndef __linux__
-static char *buggyMinorNameForFD(int fd, int type)
+static char *buggyMinorNameForMajMin(int maj, int min, int type)
 {
 #warning "Using unreliable codepath - see inline comment"
     /*
@@ -2922,10 +2922,7 @@ static char *buggyMinorNameForFD(int fd, int type)
     struct stat      sbuf;
     char             node[PATH_MAX + 1];
     const char      *dev_name;
-    int              maj, min, n;
-
-    if (fd_to_maj_min(fd, &maj, &min))
-        return NULL;
+    int              n;
 
     /* Auto-detect the type as needed */
     if (type == -1)
@@ -2953,7 +2950,7 @@ static char *buggyMinorNameForFD(int fd, int type)
 }
 #endif
 
-static char *drmGetMinorNameForFD(int fd, int type)
+static char *drmGetMinorNameForMajMin(int maj, int min, int type)
 {
 #ifdef __linux__
     DIR *sysdir;
@@ -2962,15 +2959,11 @@ static char *drmGetMinorNameForFD(int fd, int type)
     const char *name = drmGetMinorName(type);
     int len;
     char dev_name[64], buf[64];
-    int maj, min;
 
     if (!name)
         return NULL;
 
     len = strlen(name);
-
-    if (fd_to_maj_min(fd, &maj, &min))
-        return NULL;
 
     snprintf(buf, sizeof(buf), "/sys/dev/char/%d:%d/device/drm", maj, min);
 
@@ -2995,8 +2988,18 @@ static char *drmGetMinorNameForFD(int fd, int type)
     return NULL;
 #else
     /* Use buggy fallback helper - use the provided node type */
-    return buggyMinorNameForFD(fd, type);
+    return buggyMinorNameForMajMin(maj, min, type);
 #endif
+}
+
+static char *drmGetMinorNameForFD(int fd, int type)
+{
+    int maj, min;
+
+    if (fd_to_maj_min(fd, &maj, &min))
+        return NULL;
+
+    return drmGetMinorNameForMajMin(maj, min, type);
 }
 
 drm_public char *drmGetPrimaryDeviceNameFromFd(int fd)
@@ -4203,17 +4206,13 @@ drm_public int drmGetDevices(drmDevicePtr devices[], int max_devices)
     return drmGetDevices2(DRM_DEVICE_GET_PCI_REVISION, devices, max_devices);
 }
 
-drm_public char *drmGetDeviceNameFromFd2(int fd)
+static char *
+drmGetDeviceNameFromMajMin(int maj, int min)
 {
 #ifdef __linux__
     char path[PATH_MAX + 1], *value;
-    unsigned int maj, min;
-
-    if (fd_to_maj_min(fd, &maj, &min))
-        return NULL;
 
     snprintf(path, sizeof(path), "/sys/dev/char/%d:%d", maj, min);
-
     value = sysfs_uevent_get(path, "DEVNAME");
     if (!value)
         return NULL;
@@ -4224,8 +4223,17 @@ drm_public char *drmGetDeviceNameFromFd2(int fd)
     return strdup(path);
 #else
     /* Use buggy fallback helper - auto-detect the node type */
-    return buggyMinorNameForFD(fd, -1);
+    return buggyMinorNameForMajMin(maj, min, -1);
 #endif
+}
+
+drm_public char *drmGetDeviceNameFromFd2(int fd)
+{
+    int maj, min;
+
+    if (fd_to_maj_min(fd, &maj, &min))
+        return NULL;
+    return drmGetDeviceNameFromMajMin(maj, min);
 }
 
 drm_public int drmSyncobjCreate(int fd, uint32_t flags, uint32_t *handle)
