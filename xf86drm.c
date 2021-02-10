@@ -121,9 +121,6 @@ struct drm_pciinfo {
 
 static drmServerInfoPtr drm_server_info;
 
-static bool drmNodeIsDRM(int maj, int min);
-static char *drmGetMinorNameForFD(int fd, int type);
-
 static unsigned log2_int(unsigned x)
 {
     unsigned l;
