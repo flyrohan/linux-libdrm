@@ -3967,17 +3967,24 @@ process_device(drmDevicePtr *device, const char *node,
 }
 
 static int
-process_device_node(drmDevicePtr device, const char *node, const *d_name)
+process_device_nodes(drmDevicePtr device, const char *node)
 {
-    struct stat sbuf;
-    int type;
+    int type, maj, min;
+    char *local_node;
 
-    type = drmGetNodeType(d_name);
-    if (type < 0 || stat(node, &sbuf))
+    if (node_to_maj_min(node, &maj, &min))
         return -1;
 
-    device->available_nodes = 1 << type;
-    strcpy(device->nodes[type], node);
+    for (type = DRM_NODE_PRIMARY; type < DRM_NODE_MAX; type++) {
+        local_node = drmGetMinorNameForMajMin(maj, min, type);
+        if (!local_node)
+            continue;
+
+        device->available_nodes |= 1 << type;
+        strcpy(device->nodes[type], local_node);
+        free(local_node);
+    }
+
     return 0;
 }
 
@@ -4088,7 +4095,7 @@ drm_public int drmGetDevice2(int fd, uint32_t flags, drmDevicePtr *device)
         if (ret)
             continue;
 
-        ret = process_device_node(d, node, dent->d_name);
+        ret = process_device_nodes(d, node);
         if (ret) {
             drmFreeDevice(&d);
             continue;
@@ -4180,7 +4187,7 @@ drm_public int drmGetDevices2(uint32_t flags, drmDevicePtr devices[],
         if (ret)
             continue;
 
-        ret = process_device_node(device, node, dent->d_name);
+        ret = process_device_nodes(device, node);
         if (ret) {
             drmFreeDevice(&device);
             continue;
