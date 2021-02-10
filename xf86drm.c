@@ -3517,8 +3517,7 @@ drm_public void drmFreeDevices(drmDevicePtr devices[], int count)
             drmFreeDevice(&devices[i]);
 }
 
-static drmDevicePtr drmDeviceAlloc(unsigned int type, const char *node,
-                                   size_t bus_size, size_t device_size,
+static drmDevicePtr drmDeviceAlloc(size_t bus_size, size_t device_size,
                                    char **ptrp)
 {
     size_t max_node_length, extra, size;
@@ -3535,8 +3534,6 @@ static drmDevicePtr drmDeviceAlloc(unsigned int type, const char *node,
     if (!device)
         return NULL;
 
-    device->available_nodes = 1 << type;
-
     ptr = (char *)device + sizeof(*device);
     device->nodes = (char **)ptr;
 
@@ -3547,15 +3544,12 @@ static drmDevicePtr drmDeviceAlloc(unsigned int type, const char *node,
         ptr += max_node_length;
     }
 
-    strcpy(device->nodes[type], node);
-
     *ptrp = ptr;
 
     return device;
 }
 
 static int drmProcessPciDevice(drmDevicePtr *device,
-                               const char *node, int node_type,
                                int maj, int min, bool fetch_deviceinfo,
                                uint32_t flags)
 {
@@ -3563,7 +3557,7 @@ static int drmProcessPciDevice(drmDevicePtr *device,
     char *addr;
     int ret;
 
-    dev = drmDeviceAlloc(node_type, node, sizeof(drmPciBusInfo),
+    dev = drmDeviceAlloc(sizeof(drmPciBusInfo),
                          sizeof(drmPciDeviceInfo), &addr);
     if (!dev)
         return -ENOMEM;
@@ -3707,15 +3701,15 @@ static int drmParseUsbDeviceInfo(int maj, int min, drmUsbDeviceInfoPtr info)
 #endif
 }
 
-static int drmProcessUsbDevice(drmDevicePtr *device, const char *node,
-                               int node_type, int maj, int min,
-                               bool fetch_deviceinfo, uint32_t flags)
+static int drmProcessUsbDevice(drmDevicePtr *device,
+                               int maj, int min, bool fetch_deviceinfo,
+                               uint32_t flags)
 {
     drmDevicePtr dev;
     char *ptr;
     int ret;
 
-    dev = drmDeviceAlloc(node_type, node, sizeof(drmUsbBusInfo),
+    dev = drmDeviceAlloc(sizeof(drmUsbBusInfo),
                          sizeof(drmUsbDeviceInfo), &ptr);
     if (!dev)
         return -ENOMEM;
@@ -3842,7 +3836,6 @@ free:
 }
 
 static int drmProcessPlatformDevice(drmDevicePtr *device,
-                                    const char *node, int node_type,
                                     int maj, int min, bool fetch_deviceinfo,
                                     uint32_t flags)
 {
@@ -3850,7 +3843,7 @@ static int drmProcessPlatformDevice(drmDevicePtr *device,
     char *ptr;
     int ret;
 
-    dev = drmDeviceAlloc(node_type, node, sizeof(drmPlatformBusInfo),
+    dev = drmDeviceAlloc(sizeof(drmPlatformBusInfo),
                          sizeof(drmPlatformDeviceInfo), &ptr);
     if (!dev)
         return -ENOMEM;
@@ -3882,7 +3875,6 @@ free_device:
 }
 
 static int drmProcessHost1xDevice(drmDevicePtr *device,
-                                  const char *node, int node_type,
                                   int maj, int min, bool fetch_deviceinfo,
                                   uint32_t flags)
 {
@@ -3890,7 +3882,7 @@ static int drmProcessHost1xDevice(drmDevicePtr *device,
     char *ptr;
     int ret;
 
-    dev = drmDeviceAlloc(node_type, node, sizeof(drmHost1xBusInfo),
+    dev = drmDeviceAlloc(sizeof(drmHost1xBusInfo),
                          sizeof(drmHost1xDeviceInfo), &ptr);
     if (!dev)
         return -ENOMEM;
@@ -3928,12 +3920,8 @@ process_device(drmDevicePtr *device, const char *d_name,
 {
     struct stat sbuf;
     char node[PATH_MAX + 1];
-    int node_type, subsystem_type;
+    int subsystem_type;
     unsigned int maj, min;
-
-    node_type = drmGetNodeType(d_name);
-    if (node_type < 0)
-        return -1;
 
     snprintf(node, PATH_MAX, "%s/%s", DRM_DIR_NAME, d_name);
     if (stat(node, &sbuf))
@@ -3952,20 +3940,37 @@ process_device(drmDevicePtr *device, const char *d_name,
     switch (subsystem_type) {
     case DRM_BUS_PCI:
     case DRM_BUS_VIRTIO:
-        return drmProcessPciDevice(device, node, node_type, maj, min,
+        return drmProcessPciDevice(device, maj, min,
                                    fetch_deviceinfo, flags);
     case DRM_BUS_USB:
-        return drmProcessUsbDevice(device, node, node_type, maj, min,
+        return drmProcessUsbDevice(device, maj, min,
                                    fetch_deviceinfo, flags);
     case DRM_BUS_PLATFORM:
-        return drmProcessPlatformDevice(device, node, node_type, maj, min,
+        return drmProcessPlatformDevice(device, maj, min,
                                         fetch_deviceinfo, flags);
     case DRM_BUS_HOST1X:
-        return drmProcessHost1xDevice(device, node, node_type, maj, min,
+        return drmProcessHost1xDevice(device, maj, min,
                                       fetch_deviceinfo, flags);
     default:
         return -1;
    }
+}
+
+static int
+process_device_node(drmDevicePtr device, const char *d_name)
+{
+    struct stat sbuf;
+    char node[PATH_MAX + 1];
+    int type;
+
+    type = drmGetNodeType(d_name);
+    snprintf(node, PATH_MAX, "%s/%s", DRM_DIR_NAME, d_name);
+    if (type < 0 || stat(node, &sbuf))
+        return -1;
+
+    device->available_nodes = 1 << type;
+    strcpy(device->nodes[type], node);
+    return 0;
 }
 
 /* Consider devices located on the same bus as duplicate and fold the respective
@@ -4072,6 +4077,12 @@ drm_public int drmGetDevice2(int fd, uint32_t flags, drmDevicePtr *device)
         if (ret)
             continue;
 
+        ret = process_device_node(d, dent->d_name);
+        if (ret) {
+            drmFreeDevice(&d);
+            continue;
+        }
+
         if (i >= MAX_DRM_NODES) {
             fprintf(stderr, "More than %d drm nodes detected. "
                     "Please report a bug - that should not happen.\n"
@@ -4154,6 +4165,12 @@ drm_public int drmGetDevices2(uint32_t flags, drmDevicePtr devices[],
         ret = process_device(&device, dent->d_name, -1, devices != NULL, flags);
         if (ret)
             continue;
+
+        ret = process_device_node(device, dent->d_name);
+        if (ret) {
+            drmFreeDevice(&device);
+            continue;
+        }
 
         if (i >= MAX_DRM_NODES) {
             fprintf(stderr, "More than %d drm nodes detected. "
