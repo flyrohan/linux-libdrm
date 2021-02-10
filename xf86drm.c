@@ -2844,21 +2844,32 @@ static bool drmNodeIsDRM(int maj, int min)
 #endif
 }
 
-drm_public int drmGetNodeTypeFromFd(int fd)
+static int
+fd_to_maj_min(int fd, int *maj, int *min)
 {
     struct stat sbuf;
-    int maj, min, type;
 
     if (fstat(fd, &sbuf))
         return -1;
 
-    maj = major(sbuf.st_rdev);
-    min = minor(sbuf.st_rdev);
+    *maj = major(sbuf.st_rdev);
+    *min = minor(sbuf.st_rdev);
 
-    if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode)) {
+    if (!drmNodeIsDRM(*maj, *min) || !S_ISCHR(sbuf.st_mode)) {
         errno = EINVAL;
         return -1;
     }
+
+    return 0;
+}
+
+drm_public int drmGetNodeTypeFromFd(int fd)
+{
+    int maj, min, type, ret;
+
+    ret = fd_to_maj_min(fd, &maj, &min);
+    if (ret)
+        return ret;
 
     type = drmGetMinorType(maj, min);
     if (type == -1)
@@ -2913,13 +2924,7 @@ static char *buggyMinorNameForFD(int fd, int type)
     const char      *dev_name;
     int              maj, min, n;
 
-    if (fstat(fd, &sbuf))
-        return NULL;
-
-    maj = major(sbuf.st_rdev);
-    min = minor(sbuf.st_rdev);
-
-    if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode))
+    if (fd_to_maj_min(fd, &maj, &min))
         return NULL;
 
     /* Auto-detect the type as needed */
@@ -2964,13 +2969,7 @@ static char *drmGetMinorNameForFD(int fd, int type)
 
     len = strlen(name);
 
-    if (fstat(fd, &sbuf))
-        return NULL;
-
-    maj = major(sbuf.st_rdev);
-    min = minor(sbuf.st_rdev);
-
-    if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode))
+    if (fd_to_maj_min(fd, &maj, &min))
         return NULL;
 
     snprintf(buf, sizeof(buf), "/sys/dev/char/%d:%d/device/drm", maj, min);
@@ -4052,11 +4051,9 @@ drm_public int drmGetDevice2(int fd, uint32_t flags, drmDevicePtr *device)
         return -errno;
 
     find_rdev = sbuf.st_rdev;
-    maj = major(sbuf.st_rdev);
-    min = minor(sbuf.st_rdev);
 
-    if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode))
-        return -EINVAL;
+    if (fd_to_maj_min(fd, &maj, &min))
+        return -errno;
 
     subsystem_type = drmParseSubsystemType(maj, min);
     if (subsystem_type < 0)
@@ -4209,17 +4206,10 @@ drm_public int drmGetDevices(drmDevicePtr devices[], int max_devices)
 drm_public char *drmGetDeviceNameFromFd2(int fd)
 {
 #ifdef __linux__
-    struct stat sbuf;
     char path[PATH_MAX + 1], *value;
     unsigned int maj, min;
 
-    if (fstat(fd, &sbuf))
-        return NULL;
-
-    maj = major(sbuf.st_rdev);
-    min = minor(sbuf.st_rdev);
-
-    if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode))
+    if (fd_to_maj_min(fd, &maj, &min))
         return NULL;
 
     snprintf(path, sizeof(path), "/sys/dev/char/%d:%d", maj, min);
