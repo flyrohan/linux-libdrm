@@ -3547,7 +3547,7 @@ static drmDevicePtr drmDeviceAlloc(unsigned int type, const char *node,
         ptr += max_node_length;
     }
 
-    memcpy(device->nodes[type], node, max_node_length);
+    strcpy(device->nodes[type], node);
 
     *ptrp = ptr;
 
