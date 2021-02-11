@@ -121,22 +121,6 @@ struct drm_pciinfo {
 
 static drmServerInfoPtr drm_server_info;
 
-static unsigned log2_int(unsigned x)
-{
-    unsigned l;
-
-    if (x < 2) {
-        return 0;
-    }
-    for (l = 2; ; l++) {
-        if ((unsigned)(1 << l) > x) {
-            return l - 1;
-        }
-    }
-    return 0;
-}
-
-
 drm_public void drmSetServerInfo(drmServerInfoPtr info)
 {
     drm_server_info = info;
@@ -3290,23 +3274,6 @@ drm_public int drmDevicesEqual(drmDevicePtr a, drmDevicePtr b)
     return 0;
 }
 
-static int drmGetNodeType(const char *name)
-{
-    if (strncmp(name, DRM_CONTROL_MINOR_NAME,
-        sizeof(DRM_CONTROL_MINOR_NAME ) - 1) == 0)
-        return DRM_NODE_CONTROL;
-
-    if (strncmp(name, DRM_RENDER_MINOR_NAME,
-        sizeof(DRM_RENDER_MINOR_NAME) - 1) == 0)
-        return DRM_NODE_RENDER;
-
-    if (strncmp(name, DRM_PRIMARY_MINOR_NAME,
-        sizeof(DRM_PRIMARY_MINOR_NAME) - 1) == 0)
-        return DRM_NODE_PRIMARY;
-
-    return -EINVAL;
-}
-
 static int drmGetMaxNodeName(void)
 {
     return sizeof(DRM_DIR_NAME) +
@@ -3988,56 +3955,12 @@ process_device_nodes(drmDevicePtr device, const char *node)
     return 0;
 }
 
-/* Consider devices located on the same bus as duplicate and fold the respective
- * entries into a single one.
- *
- * Note: this leaves "gaps" in the array, while preserving the length.
- */
-static void drmFoldDuplicatedDevices(drmDevicePtr local_devices[], int count)
-{
-    int node_type, i, j;
-
-    for (i = 0; i < count; i++) {
-        for (j = i + 1; j < count; j++) {
-            if (drmDevicesEqual(local_devices[i], local_devices[j])) {
-                local_devices[i]->available_nodes |= local_devices[j]->available_nodes;
-                node_type = log2_int(local_devices[j]->available_nodes);
-                memcpy(local_devices[i]->nodes[node_type],
-                       local_devices[j]->nodes[node_type], drmGetMaxNodeName());
-                drmFreeDevice(&local_devices[j]);
-            }
-        }
-    }
-}
-
 /* Check that the given flags are valid returning 0 on success */
 static int
 drm_device_validate_flags(uint32_t flags)
 {
         return (flags & ~DRM_DEVICE_GET_PCI_REVISION);
 }
-
-static bool
-drm_device_has_rdev(drmDevicePtr device, dev_t find_rdev)
-{
-    struct stat sbuf;
-
-    for (int i = 0; i < DRM_NODE_MAX; i++) {
-        if (device->available_nodes & 1 << i) {
-            if (stat(device->nodes[i], &sbuf) == 0 &&
-                sbuf.st_rdev == find_rdev)
-                return true;
-        }
-    }
-    return false;
-}
-
-/*
- * The kernel drm core has a number of places that assume maximum of
- * 3x64 devices nodes. That's 64 for each of primary, control and
- * render nodes. Rounded it up to 256 for simplicity.
- */
-#define MAX_DRM_NODES 256
 
 static char *
 drmGetDeviceNameFromMajMin(int maj, int min);
