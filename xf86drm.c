@@ -4129,12 +4129,13 @@ drm_public int drmGetDevice(int fd, drmDevicePtr *device)
 drm_public int drmGetDevices2(uint32_t flags, drmDevicePtr devices[],
                               int max_devices)
 {
-    drmDevicePtr local_devices[MAX_DRM_NODES];
     drmDevicePtr device;
     DIR *sysdir;
     struct dirent *dent;
     char node[PATH_MAX + 1];
-    int ret, i, node_count, device_count;
+    int ret, device_count = 0;
+    const char *prim_dname = drmGetMinorName(DRM_NODE_PRIMARY);
+    const int dname_len = strlen(prim_dname);
 
     if (drm_device_validate_flags(flags))
         return -EINVAL;
@@ -4143,8 +4144,11 @@ drm_public int drmGetDevices2(uint32_t flags, drmDevicePtr devices[],
     if (!sysdir)
         return -errno;
 
-    i = 0;
     while ((dent = readdir(sysdir))) {
+        /* All DRM devices must have a card/primary node */
+        if (strncmp(dent->d_name, prim_dname, dname_len) != 0)
+            continue;
+
         snprintf(node, PATH_MAX, "%s/%s", DRM_DIR_NAME, dent->d_name);
 
         ret = process_device(&device, node, -1, devices != NULL, flags);
@@ -4157,28 +4161,10 @@ drm_public int drmGetDevices2(uint32_t flags, drmDevicePtr devices[],
             continue;
         }
 
-        if (i >= MAX_DRM_NODES) {
-            fprintf(stderr, "More than %d drm nodes detected. "
-                    "Please report a bug - that should not happen.\n"
-                    "Skipping extra nodes\n", MAX_DRM_NODES);
-            break;
-        }
-        local_devices[i] = device;
-        i++;
-    }
-    node_count = i;
-
-    drmFoldDuplicatedDevices(local_devices, node_count);
-
-    device_count = 0;
-    for (i = 0; i < node_count; i++) {
-        if (!local_devices[i])
-            continue;
-
         if ((devices != NULL) && (device_count < max_devices))
-            devices[device_count] = local_devices[i];
+            devices[device_count] = device;
         else
-            drmFreeDevice(&local_devices[i]);
+            drmFreeDevice(&device);
 
         device_count++;
     }
