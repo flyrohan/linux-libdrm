@@ -3940,6 +3940,13 @@ process_device_nodes(drmDevicePtr device, const char *node)
         return -1;
 
     for (type = DRM_NODE_PRIMARY; type < DRM_NODE_MAX; type++) {
+
+        if (drmGetMinorType(maj, min) == type) {
+            device->available_nodes |= 1 << type;
+            strcpy(device->nodes[type], node);
+            continue;
+        }
+
         local_node = drmGetMinorNameForMajMin(maj, min, type);
         if (!local_node)
             continue;
