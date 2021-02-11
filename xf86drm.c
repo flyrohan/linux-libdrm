@@ -3901,7 +3901,6 @@ free_device:
 
 static int
 process_device(drmDevicePtr *device, const char *node,
-               int req_subsystem_type,
                bool fetch_deviceinfo, uint32_t flags)
 {
     int subsystem_type;
@@ -3911,8 +3910,6 @@ process_device(drmDevicePtr *device, const char *node,
         return -1;
 
     subsystem_type = drmParseSubsystemType(maj, min);
-    if (req_subsystem_type != -1 && req_subsystem_type != subsystem_type)
-        return -1;
 
     switch (subsystem_type) {
     case DRM_BUS_PCI:
@@ -3982,7 +3979,6 @@ drm_public int drmGetDevice2(int fd, uint32_t flags, drmDevicePtr *device)
 {
     drmDevicePtr d;
     char *node;
-    int subsystem_type;
     int maj, min, ret;
 
     if (drm_device_validate_flags(flags))
@@ -3994,15 +3990,11 @@ drm_public int drmGetDevice2(int fd, uint32_t flags, drmDevicePtr *device)
     if (fd_to_maj_min(fd, &maj, &min))
         return -errno;
 
-    subsystem_type = drmParseSubsystemType(maj, min);
-    if (subsystem_type < 0)
-        return subsystem_type;
-
     node = drmGetDeviceNameFromMajMin(maj, min);
     if (!node)
         return -EINVAL;
 
-    ret = process_device(&d, node, subsystem_type, true, flags);
+    ret = process_device(&d, node, true, flags);
     if (ret) {
         free(node);
         return -ENODEV;
@@ -4074,7 +4066,7 @@ drm_public int drmGetDevices2(uint32_t flags, drmDevicePtr devices[],
 
         snprintf(node, PATH_MAX, "%s/%s", DRM_DIR_NAME, dent->d_name);
 
-        ret = process_device(&device, node, -1, devices != NULL, flags);
+        ret = process_device(&device, node, devices != NULL, flags);
         if (ret)
             continue;
 
