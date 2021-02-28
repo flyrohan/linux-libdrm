@@ -2945,6 +2945,9 @@ static char *drmGetMinorNameForFD(int fd, int type)
                  ent->d_name);
 
             closedir(sysdir);
+
+            if (stat(dev_name, &sbuf))
+                return NULL;
             return strdup(dev_name);
         }
     }
@@ -2993,6 +2996,9 @@ static char *drmGetMinorNameForFD(int fd, int type)
     snprintf(name, sizeof(name), DRM_DIR_NAME "/%s%d", mname,
          id + drmGetMinorBase(type));
 
+    if (stat(name, &sbuf))
+        return NULL;
+
     return strdup(name);
 #else
     struct stat sbuf;
@@ -3015,6 +3021,9 @@ static char *drmGetMinorNameForFD(int fd, int type)
 
     n = snprintf(buf, sizeof(buf), dev_name, DRM_DIR_NAME, min);
     if (n == -1 || n >= sizeof(buf))
+        return NULL;
+
+    if (stat(buf, &sbuf))
         return NULL;
 
     return strdup(buf);
