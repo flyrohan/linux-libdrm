@@ -280,6 +280,8 @@ static const char *modifier_to_string(uint64_t modifier)
 		return "Y_TILED_CCS";
 	case I915_FORMAT_MOD_Yf_TILED_CCS:
 		return "Yf_TILED_CCS";
+	case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS:
+		return "Y_TILED_GEN12_RC_CCS";
 	case DRM_FORMAT_MOD_SAMSUNG_64_32_TILE:
 		return "SAMSUNG_64_32_TILE";
 	case DRM_FORMAT_MOD_VIVANTE_TILED:
