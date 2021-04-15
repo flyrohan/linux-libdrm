@@ -137,7 +137,7 @@ static inline int64_t U642I64(uint64_t val)
 
 static float mode_vrefresh(drmModeModeInfo *mode)
 {
-	return  mode->clock * 1000.00
+	return  mode->clock * (mode->flags & DRM_MODE_FLAG_INTERLACE ? 2000.00 : 1000.00)
 			/ (mode->htotal * mode->vtotal);
 }
 
