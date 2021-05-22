@@ -695,6 +695,7 @@ int suite_basic_tests_clean(void)
 static void amdgpu_query_info_test(void)
 {
 	struct amdgpu_gpu_info gpu_info = {0};
+	struct drm_amdgpu_info_vbios vbios_info = {0};
 	uint32_t version, feature;
 	int r;
 
@@ -703,6 +704,10 @@ static void amdgpu_query_info_test(void)
 
 	r = amdgpu_query_firmware_version(device_handle, AMDGPU_INFO_FW_VCE, 0,
 					  0, &version, &feature);
+	CU_ASSERT_EQUAL(r, 0);
+
+	r = amdgpu_query_vbios_info(device_handle, AMDGPU_INFO_VBIOS_INFO,
+					  sizeof(vbios_info), &vbios_info);
 	CU_ASSERT_EQUAL(r, 0);
 }
 
