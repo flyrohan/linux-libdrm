@@ -15,6 +15,7 @@ amdgpu_bo_set_metadata
 amdgpu_bo_va_op
 amdgpu_bo_va_op_raw
 amdgpu_bo_wait_for_idle
+amdgpu_bo_create_from_gem_handle
 amdgpu_create_bo_from_user_mem
 amdgpu_cs_chunk_fence_info_to_data
 amdgpu_cs_chunk_fence_to_dep

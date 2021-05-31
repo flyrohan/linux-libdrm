@@ -108,6 +108,22 @@ out:
 	return r;
 }
 
+drm_public int amdgpu_bo_create_from_gem_handle(amdgpu_device_handle dev,
+						uint64_t size,
+						uint32_t gem_handle,
+						amdgpu_bo_handle *buf_handle)
+{
+	int r;
+	pthread_mutex_lock(&dev->bo_table_mutex);
+	r = amdgpu_bo_create(dev, size, gem_handle, buf_handle);
+	pthread_mutex_unlock(&dev->bo_table_mutex);
+	if (r)
+		return -1;
+
+	return 0;
+
+}
+
 drm_public int amdgpu_bo_set_metadata(amdgpu_bo_handle bo,
 				      struct amdgpu_bo_metadata *info)
 {

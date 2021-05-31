@@ -570,6 +570,23 @@ int amdgpu_bo_alloc(amdgpu_device_handle dev,
 		    amdgpu_bo_handle *buf_handle);
 
 /**
+ * Create amdgpu_bo_handle from an external GEM handle
+ *
+ * \param   dev		- \c [in] Device handle.
+ *				   See #amdgpu_device_initialize()
+ * \param   size	- \c [in] Size of the buffer object associated with
+ *				   the gem handle
+ * \param   gem_handle	- \c [in] GEM handle returned by the KMD
+ * \param   buf_handle	- \c [out] Allocated buffer handle
+ *
+ * \return	0 on success and -1 on failure.
+ *
+*/
+int amdgpu_bo_create_from_gem_handle(amdgpu_device_handle dev,
+		uint64_t size,
+		uint32_t gem_handle, amdgpu_bo_handle *buf_handle);
+
+/**
  * Associate opaque data with buffer to be queried by another UMD
  *
  * \param   dev	       - \c [in] Device handle. See #amdgpu_device_initialize()
