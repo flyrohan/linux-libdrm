@@ -4361,6 +4361,29 @@ drm_public char *drmGetDeviceNameFromFd2(int fd)
 #endif
 }
 
+drm_public char *drmGetCharDeviceFromFd(int fd)
+{
+#ifdef __linux__
+    struct stat sbuf;
+    char path[PATH_MAX + 1];
+    unsigned int maj, min;
+
+    if (fstat(fd, &sbuf))
+        return NULL;
+
+    maj = major(sbuf.st_rdev);
+    min = minor(sbuf.st_rdev);
+
+    if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode))
+        return NULL;
+
+    snprintf(path, sizeof(path), "/sys/dev/char/%d:%d", maj, min);
+    return strdup(path);
+#else
+    return NULL;
+#endif
+}
+
 drm_public int drmSyncobjCreate(int fd, uint32_t flags, uint32_t *handle)
 {
     struct drm_syncobj_create args;

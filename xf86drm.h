@@ -812,6 +812,7 @@ extern char *drmGetDeviceNameFromFd(int fd);
  */
 extern char *drmGetDeviceNameFromFd2(int fd);
 extern int drmGetNodeTypeFromFd(int fd);
+extern char *drmGetCharDeviceFromFd(int fd);
 
 /* Convert between GEM handles and DMA-BUF file descriptors.
  *
