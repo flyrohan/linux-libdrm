@@ -346,3 +346,23 @@ drm_public int amdgpu_query_video_caps_info(amdgpu_device_handle dev, unsigned c
 	return drmCommandWrite(dev->fd, DRM_AMDGPU_INFO, &request,
 			       sizeof(struct drm_amdgpu_info));
 }
+
+drm_public int amdgpu_query_vbios_info(amdgpu_device_handle dev, unsigned type,
+				unsigned size, void *value)
+{
+	struct drm_amdgpu_info request;
+	int r;
+
+	memset(&request, 0, sizeof(request));
+	request.return_pointer = (uintptr_t)value;
+	request.return_size = size;
+	request.query = AMDGPU_INFO_VBIOS;
+	request.vbios_info.type = type;
+
+	r = drmCommandWrite(dev->fd, DRM_AMDGPU_INFO, &request,
+			       sizeof(struct drm_amdgpu_info));
+	if (r)
+		return r;
+
+	return 0;
+}
