@@ -196,3 +196,4 @@ drmUnmap
 drmUnmapBufs
 drmUpdateDrawableInfo
 drmWaitVBlank
+drmGetCharDeviceFromFd
