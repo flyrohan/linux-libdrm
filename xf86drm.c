@@ -121,25 +121,6 @@ struct drm_pciinfo {
 
 static drmServerInfoPtr drm_server_info;
 
-static bool drmNodeIsDRM(int maj, int min);
-static char *drmGetMinorNameForFD(int fd, int type);
-
-static unsigned log2_int(unsigned x)
-{
-    unsigned l;
-
-    if (x < 2) {
-        return 0;
-    }
-    for (l = 2; ; l++) {
-        if ((unsigned)(1 << l) > x) {
-            return l - 1;
-        }
-    }
-    return 0;
-}
-
-
 drm_public void drmSetServerInfo(drmServerInfoPtr info)
 {
     drm_server_info = info;
@@ -538,27 +519,35 @@ static int drmGetMinorBase(int type)
     };
 }
 
-static int drmGetMinorType(int major, int minor)
-{
 #ifdef __FreeBSD__
+static int freebsd_minor(int major, int minor)
+{
     char name[SPECNAMELEN];
     int id;
 
     if (!devname_r(makedev(major, minor), S_IFCHR, name, sizeof(name)))
         return -1;
 
-    if (sscanf(name, "drm/%d", &id) != 1) {
-        // If not in /dev/drm/ we have the type in the name
-        if (sscanf(name, "dri/card%d\n", &id) >= 1)
-           return DRM_NODE_PRIMARY;
-        else if (sscanf(name, "dri/control%d\n", &id) >= 1)
-           return DRM_NODE_CONTROL;
-        else if (sscanf(name, "dri/renderD%d\n", &id) >= 1)
-           return DRM_NODE_RENDER;
-        return -1;
-    }
+    /* Handle both /dev/drm and /dev/dri
+     * FreeBSD on amd64/i386/powerpc external kernel modules create node in
+     * in /dev/drm/ and links in /dev/dri while a WIP in kernel driver creates
+     * only device nodes in /dev/dri/ */
+    if (sscanf(name, "drm/%d", &id) == 1)
+        return id;
 
-    minor = id;
+    if (sscanf(name, "dri/card%d\n", &id) == 1 ||
+        sscanf(name, "dri/control%d\n", &id) == 1 ||
+        sscanf(name, "dri/renderD%d\n", &id) == 1)
+        return id;
+
+    return -1;
+}
+#endif
+
+static int drmGetMinorType(int major, int minor)
+{
+#ifdef __FreeBSD__
+    minor = freebsd_minor(major, minor);
 #endif
     int type = minor >> 6;
 
@@ -2796,19 +2785,6 @@ drm_public int drmIsMaster(int fd)
 
 drm_public char *drmGetDeviceNameFromFd(int fd)
 {
-#ifdef __FreeBSD__
-    struct stat sbuf;
-    int maj, min;
-    int nodetype;
-
-    if (fstat(fd, &sbuf))
-        return NULL;
-
-    maj = major(sbuf.st_rdev);
-    min = minor(sbuf.st_rdev);
-    nodetype = drmGetMinorType(maj, min);
-    return drmGetMinorNameForFD(fd, nodetype);
-#else
     char name[128];
     struct stat sbuf;
     dev_t d;
@@ -2831,7 +2807,6 @@ drm_public char *drmGetDeviceNameFromFd(int fd)
         return NULL;
 
     return strdup(name);
-#endif
 }
 
 static bool drmNodeIsDRM(int maj, int min)
@@ -2858,21 +2833,51 @@ static bool drmNodeIsDRM(int maj, int min)
 #endif
 }
 
-drm_public int drmGetNodeTypeFromFd(int fd)
+static int
+fd_to_maj_min(int fd, int *maj, int *min)
 {
     struct stat sbuf;
-    int maj, min, type;
 
     if (fstat(fd, &sbuf))
         return -1;
 
-    maj = major(sbuf.st_rdev);
-    min = minor(sbuf.st_rdev);
+    *maj = major(sbuf.st_rdev);
+    *min = minor(sbuf.st_rdev);
 
-    if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode)) {
+    if (!drmNodeIsDRM(*maj, *min) || !S_ISCHR(sbuf.st_mode)) {
         errno = EINVAL;
         return -1;
     }
+
+    return 0;
+}
+
+static int
+node_to_maj_min(const char *node, int *maj, int *min)
+{
+    struct stat sbuf;
+
+    if (stat(node, &sbuf))
+        return -1;
+
+    *maj = major(sbuf.st_rdev);
+    *min = minor(sbuf.st_rdev);
+
+    if (!drmNodeIsDRM(*maj, *min) || !S_ISCHR(sbuf.st_mode)) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    return 0;
+}
+
+drm_public int drmGetNodeTypeFromFd(int fd)
+{
+    int maj, min, type, ret;
+
+    ret = fd_to_maj_min(fd, &maj, &min);
+    if (ret)
+        return ret;
 
     type = drmGetMinorType(maj, min);
     if (type == -1)
@@ -2913,7 +2918,47 @@ drm_public int drmPrimeFDToHandle(int fd, int prime_fd, uint32_t *handle)
     return 0;
 }
 
-static char *drmGetMinorNameForFD(int fd, int type)
+#ifndef __linux__
+static char *buggyMinorNameForMajMin(int maj, int min, int type)
+{
+#warning "Using unreliable codepath - see inline comment"
+    /*
+     * This (fallback) codepath is buggy, since it assumes that any DRM driver
+     * will expose both primary and render node. If they do not, then cardX
+     * and renderD(X+128) will not point to the same device.
+     */
+    struct stat      sbuf;
+    char             node[PATH_MAX + 1];
+    const char      *dev_name;
+    int              n;
+
+    /* Auto-detect the type as needed */
+    if (type == -1)
+        type = drmGetMinorType(maj, min);
+
+    if (type == -1)
+        return NULL;
+
+    dev_name = drmGetDeviceName(type);
+    if (!dev_name)
+        return NULL;
+
+#if defined(__FreeBSD__)
+    min = freebsd_minor(maj, min);
+#endif
+
+    n = snprintf(node, PATH_MAX, dev_name, DRM_DIR_NAME, min);
+    if (n == -1 || n >= PATH_MAX)
+      return NULL;
+
+    if (stat(node, &sbuf))
+        return NULL;
+
+    return strdup(node);
+}
+#endif
+
+static char *drmGetMinorNameForMajMin(int maj, int min, int type)
 {
 #ifdef __linux__
     DIR *sysdir;
@@ -2922,21 +2967,11 @@ static char *drmGetMinorNameForFD(int fd, int type)
     const char *name = drmGetMinorName(type);
     int len;
     char dev_name[64], buf[64];
-    int maj, min;
 
     if (!name)
         return NULL;
 
     len = strlen(name);
-
-    if (fstat(fd, &sbuf))
-        return NULL;
-
-    maj = major(sbuf.st_rdev);
-    min = minor(sbuf.st_rdev);
-
-    if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode))
-        return NULL;
 
     snprintf(buf, sizeof(buf), "/sys/dev/char/%d:%d/device/drm", maj, min);
 
@@ -2950,80 +2985,29 @@ static char *drmGetMinorNameForFD(int fd, int type)
                  ent->d_name);
 
             closedir(sysdir);
+
+            if (stat(dev_name, &sbuf))
+                return NULL;
             return strdup(dev_name);
         }
     }
 
     closedir(sysdir);
     return NULL;
-#elif defined(__FreeBSD__)
-    struct stat sbuf;
-    char dname[SPECNAMELEN];
-    const char *mname;
-    char name[SPECNAMELEN];
-    int id, maj, min, nodetype, i;
-
-    if (fstat(fd, &sbuf))
-        return NULL;
-
-    maj = major(sbuf.st_rdev);
-    min = minor(sbuf.st_rdev);
-
-    if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode))
-        return NULL;
-
-    if (!devname_r(sbuf.st_rdev, S_IFCHR, dname, sizeof(dname)))
-        return NULL;
-
-    /* Handle both /dev/drm and /dev/dri
-     * FreeBSD on amd64/i386/powerpc external kernel modules create node in
-     * in /dev/drm/ and links in /dev/dri while a WIP in kernel driver creates
-     * only device nodes in /dev/dri/ */
-
-    /* Get the node type represented by fd so we can deduce the target name */
-    nodetype = drmGetMinorType(maj, min);
-    if (nodetype == -1)
-        return (NULL);
-    mname = drmGetMinorName(type);
-
-    for (i = 0; i < SPECNAMELEN; i++) {
-        if (isalpha(dname[i]) == 0 && dname[i] != '/')
-           break;
-    }
-    if (dname[i] == '\0')
-        return (NULL);
-
-    id = (int)strtol(&dname[i], NULL, 10);
-    id -= drmGetMinorBase(nodetype);
-    snprintf(name, sizeof(name), DRM_DIR_NAME "/%s%d", mname,
-         id + drmGetMinorBase(type));
-
-    return strdup(name);
 #else
-    struct stat sbuf;
-    char buf[PATH_MAX + 1];
-    const char *dev_name = drmGetDeviceName(type);
-    unsigned int maj, min;
-    int n;
-
-    if (fstat(fd, &sbuf))
-        return NULL;
-
-    maj = major(sbuf.st_rdev);
-    min = minor(sbuf.st_rdev);
-
-    if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode))
-        return NULL;
-
-    if (!dev_name)
-        return NULL;
-
-    n = snprintf(buf, sizeof(buf), dev_name, DRM_DIR_NAME, min);
-    if (n == -1 || n >= sizeof(buf))
-        return NULL;
-
-    return strdup(buf);
+    /* Use buggy fallback helper - use the provided node type */
+    return buggyMinorNameForMajMin(maj, min, type);
 #endif
+}
+
+static char *drmGetMinorNameForFD(int fd, int type)
+{
+    int maj, min;
+
+    if (fd_to_maj_min(fd, &maj, &min))
+        return NULL;
+
+    return drmGetMinorNameForMajMin(maj, min, type);
 }
 
 drm_public char *drmGetPrimaryDeviceNameFromFd(int fd)
@@ -3170,23 +3154,17 @@ get_pci_path(int maj, int min, char *pci_path)
 #ifdef __FreeBSD__
 static int get_sysctl_pci_bus_info(int maj, int min, drmPciBusInfoPtr info)
 {
-    char dname[SPECNAMELEN];
     char sysctl_name[16];
     char sysctl_val[256];
     size_t sysctl_len;
     int id, type, nelem;
-    unsigned int rdev, majmin, domain, bus, dev, func;
+    unsigned int domain, bus, dev, func;
 
-    rdev = makedev(maj, min);
-    if (!devname_r(rdev, S_IFCHR, dname, sizeof(dname)))
-      return -EINVAL;
-
-    if (sscanf(dname, "drm/%d\n", &id) != 1)
-        return -EINVAL;
     type = drmGetMinorType(maj, min);
     if (type == -1)
         return -EINVAL;
 
+    id = freebsd_minor(maj, min);
     /* BUG: This above section is iffy, since it mandates that a driver will
      * create both card and render node.
      * If it does not, the next DRM device will create card#X and
@@ -3194,30 +3172,19 @@ static int get_sysctl_pci_bus_info(int maj, int min, drmPciBusInfoPtr info)
      * This is a possibility in FreeBSD but for now there is no good way for
      * obtaining the info.
      */
-    switch (type) {
-    case DRM_NODE_PRIMARY:
-         break;
-    case DRM_NODE_CONTROL:
-         id -= 64;
-         break;
-    case DRM_NODE_RENDER:
-         id -= 128;
-          break;
-    }
-    if (id < 0)
-        return -EINVAL;
+    id -= drmGetMinorBase(type);
 
     if (snprintf(sysctl_name, sizeof(sysctl_name), "hw.dri.%d.busid", id) <= 0)
-      return -EINVAL;
+       return -EINVAL;
     sysctl_len = sizeof(sysctl_val);
     if (sysctlbyname(sysctl_name, sysctl_val, &sysctl_len, NULL, 0))
-      return -EINVAL;
+       return -EINVAL;
 
     #define bus_fmt "pci:%04x:%02x:%02x.%u"
 
     nelem = sscanf(sysctl_val, bus_fmt, &domain, &bus, &dev, &func);
     if (nelem != 4)
-      return -EINVAL;
+       return -EINVAL;
     info->domain = domain;
     info->bus = bus;
     info->dev = dev;
@@ -3310,23 +3277,6 @@ drm_public int drmDevicesEqual(drmDevicePtr a, drmDevicePtr b)
     }
 
     return 0;
-}
-
-static int drmGetNodeType(const char *name)
-{
-    if (strncmp(name, DRM_CONTROL_MINOR_NAME,
-        sizeof(DRM_CONTROL_MINOR_NAME ) - 1) == 0)
-        return DRM_NODE_CONTROL;
-
-    if (strncmp(name, DRM_RENDER_MINOR_NAME,
-        sizeof(DRM_RENDER_MINOR_NAME) - 1) == 0)
-        return DRM_NODE_RENDER;
-
-    if (strncmp(name, DRM_PRIMARY_MINOR_NAME,
-        sizeof(DRM_PRIMARY_MINOR_NAME) - 1) == 0)
-        return DRM_NODE_PRIMARY;
-
-    return -EINVAL;
 }
 
 static int drmGetMaxNodeName(void)
@@ -3558,8 +3508,7 @@ drm_public void drmFreeDevices(drmDevicePtr devices[], int count)
             drmFreeDevice(&devices[i]);
 }
 
-static drmDevicePtr drmDeviceAlloc(unsigned int type, const char *node,
-                                   size_t bus_size, size_t device_size,
+static drmDevicePtr drmDeviceAlloc(size_t bus_size, size_t device_size,
                                    char **ptrp)
 {
     size_t max_node_length, extra, size;
@@ -3576,8 +3525,6 @@ static drmDevicePtr drmDeviceAlloc(unsigned int type, const char *node,
     if (!device)
         return NULL;
 
-    device->available_nodes = 1 << type;
-
     ptr = (char *)device + sizeof(*device);
     device->nodes = (char **)ptr;
 
@@ -3588,15 +3535,12 @@ static drmDevicePtr drmDeviceAlloc(unsigned int type, const char *node,
         ptr += max_node_length;
     }
 
-    memcpy(device->nodes[type], node, max_node_length);
-
     *ptrp = ptr;
 
     return device;
 }
 
 static int drmProcessPciDevice(drmDevicePtr *device,
-                               const char *node, int node_type,
                                int maj, int min, bool fetch_deviceinfo,
                                uint32_t flags)
 {
@@ -3604,7 +3548,7 @@ static int drmProcessPciDevice(drmDevicePtr *device,
     char *addr;
     int ret;
 
-    dev = drmDeviceAlloc(node_type, node, sizeof(drmPciBusInfo),
+    dev = drmDeviceAlloc(sizeof(drmPciBusInfo),
                          sizeof(drmPciDeviceInfo), &addr);
     if (!dev)
         return -ENOMEM;
@@ -3748,15 +3692,15 @@ static int drmParseUsbDeviceInfo(int maj, int min, drmUsbDeviceInfoPtr info)
 #endif
 }
 
-static int drmProcessUsbDevice(drmDevicePtr *device, const char *node,
-                               int node_type, int maj, int min,
-                               bool fetch_deviceinfo, uint32_t flags)
+static int drmProcessUsbDevice(drmDevicePtr *device,
+                               int maj, int min, bool fetch_deviceinfo,
+                               uint32_t flags)
 {
     drmDevicePtr dev;
     char *ptr;
     int ret;
 
-    dev = drmDeviceAlloc(node_type, node, sizeof(drmUsbBusInfo),
+    dev = drmDeviceAlloc(sizeof(drmUsbBusInfo),
                          sizeof(drmUsbDeviceInfo), &ptr);
     if (!dev)
         return -ENOMEM;
@@ -3883,7 +3827,6 @@ free:
 }
 
 static int drmProcessPlatformDevice(drmDevicePtr *device,
-                                    const char *node, int node_type,
                                     int maj, int min, bool fetch_deviceinfo,
                                     uint32_t flags)
 {
@@ -3891,7 +3834,7 @@ static int drmProcessPlatformDevice(drmDevicePtr *device,
     char *ptr;
     int ret;
 
-    dev = drmDeviceAlloc(node_type, node, sizeof(drmPlatformBusInfo),
+    dev = drmDeviceAlloc(sizeof(drmPlatformBusInfo),
                          sizeof(drmPlatformDeviceInfo), &ptr);
     if (!dev)
         return -ENOMEM;
@@ -3923,7 +3866,6 @@ free_device:
 }
 
 static int drmProcessHost1xDevice(drmDevicePtr *device,
-                                  const char *node, int node_type,
                                   int maj, int min, bool fetch_deviceinfo,
                                   uint32_t flags)
 {
@@ -3931,7 +3873,7 @@ static int drmProcessHost1xDevice(drmDevicePtr *device,
     char *ptr;
     int ret;
 
-    dev = drmDeviceAlloc(node_type, node, sizeof(drmHost1xBusInfo),
+    dev = drmDeviceAlloc(sizeof(drmHost1xBusInfo),
                          sizeof(drmHost1xDeviceInfo), &ptr);
     if (!dev)
         return -ENOMEM;
@@ -3963,72 +3905,63 @@ free_device:
 }
 
 static int
-process_device(drmDevicePtr *device, const char *d_name,
-               int req_subsystem_type,
+process_device(drmDevicePtr *device, const char *node,
                bool fetch_deviceinfo, uint32_t flags)
 {
-    struct stat sbuf;
-    char node[PATH_MAX + 1];
-    int node_type, subsystem_type;
-    unsigned int maj, min;
+    int subsystem_type;
+    int maj, min;
 
-    node_type = drmGetNodeType(d_name);
-    if (node_type < 0)
-        return -1;
-
-    snprintf(node, PATH_MAX, "%s/%s", DRM_DIR_NAME, d_name);
-    if (stat(node, &sbuf))
-        return -1;
-
-    maj = major(sbuf.st_rdev);
-    min = minor(sbuf.st_rdev);
-
-    if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode))
+    if (node_to_maj_min(node, &maj, &min))
         return -1;
 
     subsystem_type = drmParseSubsystemType(maj, min);
-    if (req_subsystem_type != -1 && req_subsystem_type != subsystem_type)
-        return -1;
 
     switch (subsystem_type) {
     case DRM_BUS_PCI:
     case DRM_BUS_VIRTIO:
-        return drmProcessPciDevice(device, node, node_type, maj, min,
+        return drmProcessPciDevice(device, maj, min,
                                    fetch_deviceinfo, flags);
     case DRM_BUS_USB:
-        return drmProcessUsbDevice(device, node, node_type, maj, min,
+        return drmProcessUsbDevice(device, maj, min,
                                    fetch_deviceinfo, flags);
     case DRM_BUS_PLATFORM:
-        return drmProcessPlatformDevice(device, node, node_type, maj, min,
+        return drmProcessPlatformDevice(device, maj, min,
                                         fetch_deviceinfo, flags);
     case DRM_BUS_HOST1X:
-        return drmProcessHost1xDevice(device, node, node_type, maj, min,
+        return drmProcessHost1xDevice(device, maj, min,
                                       fetch_deviceinfo, flags);
     default:
         return -1;
    }
 }
 
-/* Consider devices located on the same bus as duplicate and fold the respective
- * entries into a single one.
- *
- * Note: this leaves "gaps" in the array, while preserving the length.
- */
-static void drmFoldDuplicatedDevices(drmDevicePtr local_devices[], int count)
+static int
+process_device_nodes(drmDevicePtr device, const char *node)
 {
-    int node_type, i, j;
+    int type, maj, min;
+    char *local_node;
 
-    for (i = 0; i < count; i++) {
-        for (j = i + 1; j < count; j++) {
-            if (drmDevicesEqual(local_devices[i], local_devices[j])) {
-                local_devices[i]->available_nodes |= local_devices[j]->available_nodes;
-                node_type = log2_int(local_devices[j]->available_nodes);
-                memcpy(local_devices[i]->nodes[node_type],
-                       local_devices[j]->nodes[node_type], drmGetMaxNodeName());
-                drmFreeDevice(&local_devices[j]);
-            }
+    if (node_to_maj_min(node, &maj, &min))
+        return -1;
+
+    for (type = DRM_NODE_PRIMARY; type < DRM_NODE_MAX; type++) {
+
+        if (drmGetMinorType(maj, min) == type) {
+            device->available_nodes |= 1 << type;
+            strcpy(device->nodes[type], node);
+            continue;
         }
+
+        local_node = drmGetMinorNameForMajMin(maj, min, type);
+        if (!local_node)
+            continue;
+
+        device->available_nodes |= 1 << type;
+        strcpy(device->nodes[type], local_node);
+        free(local_node);
     }
+
+    return 0;
 }
 
 /* Check that the given flags are valid returning 0 on success */
@@ -4038,27 +3971,8 @@ drm_device_validate_flags(uint32_t flags)
         return (flags & ~DRM_DEVICE_GET_PCI_REVISION);
 }
 
-static bool
-drm_device_has_rdev(drmDevicePtr device, dev_t find_rdev)
-{
-    struct stat sbuf;
-
-    for (int i = 0; i < DRM_NODE_MAX; i++) {
-        if (device->available_nodes & 1 << i) {
-            if (stat(device->nodes[i], &sbuf) == 0 &&
-                sbuf.st_rdev == find_rdev)
-                return true;
-        }
-    }
-    return false;
-}
-
-/*
- * The kernel drm core has a number of places that assume maximum of
- * 3x64 devices nodes. That's 64 for each of primary, control and
- * render nodes. Rounded it up to 256 for simplicity.
- */
-#define MAX_DRM_NODES 256
+static char *
+drmGetDeviceNameFromMajMin(int maj, int min);
 
 /**
  * Get information about the opened drm device
@@ -4075,66 +3989,9 @@ drm_device_has_rdev(drmDevicePtr device, dev_t find_rdev)
  */
 drm_public int drmGetDevice2(int fd, uint32_t flags, drmDevicePtr *device)
 {
-#ifdef __OpenBSD__
-    /*
-     * DRI device nodes on OpenBSD are not in their own directory, they reside
-     * in /dev along with a large number of statically generated /dev nodes.
-     * Avoid stat'ing all of /dev needlessly by implementing this custom path.
-     */
-    drmDevicePtr     d;
-    struct stat      sbuf;
-    char             node[PATH_MAX + 1];
-    const char      *dev_name;
-    int              node_type, subsystem_type;
-    int              maj, min, n, ret;
-
-    if (fd == -1 || device == NULL)
-        return -EINVAL;
-
-    if (fstat(fd, &sbuf))
-        return -errno;
-
-    maj = major(sbuf.st_rdev);
-    min = minor(sbuf.st_rdev);
-
-    if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode))
-        return -EINVAL;
-
-    node_type = drmGetMinorType(maj, min);
-    if (node_type == -1)
-        return -ENODEV;
-
-    dev_name = drmGetDeviceName(node_type);
-    if (!dev_name)
-        return -EINVAL;
-
-    n = snprintf(node, PATH_MAX, dev_name, DRM_DIR_NAME, min);
-    if (n == -1 || n >= PATH_MAX)
-      return -errno;
-    if (stat(node, &sbuf))
-        return -EINVAL;
-
-    subsystem_type = drmParseSubsystemType(maj, min);
-    if (subsystem_type != DRM_BUS_PCI)
-        return -ENODEV;
-
-    ret = drmProcessPciDevice(&d, node, node_type, maj, min, true, flags);
-    if (ret)
-        return ret;
-
-    *device = d;
-
-    return 0;
-#else
-    drmDevicePtr local_devices[MAX_DRM_NODES];
     drmDevicePtr d;
-    DIR *sysdir;
-    struct dirent *dent;
-    struct stat sbuf;
-    int subsystem_type;
-    int maj, min;
-    int ret, i, node_count;
-    dev_t find_rdev;
+    char *node;
+    int maj, min, ret;
 
     if (drm_device_validate_flags(flags))
         return -EINVAL;
@@ -4142,60 +3999,28 @@ drm_public int drmGetDevice2(int fd, uint32_t flags, drmDevicePtr *device)
     if (fd == -1 || device == NULL)
         return -EINVAL;
 
-    if (fstat(fd, &sbuf))
+    if (fd_to_maj_min(fd, &maj, &min))
         return -errno;
 
-    find_rdev = sbuf.st_rdev;
-    maj = major(sbuf.st_rdev);
-    min = minor(sbuf.st_rdev);
-
-    if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode))
+    node = drmGetDeviceNameFromMajMin(maj, min);
+    if (!node)
         return -EINVAL;
 
-    subsystem_type = drmParseSubsystemType(maj, min);
-    if (subsystem_type < 0)
-        return subsystem_type;
-
-    sysdir = opendir(DRM_DIR_NAME);
-    if (!sysdir)
-        return -errno;
-
-    i = 0;
-    while ((dent = readdir(sysdir))) {
-        ret = process_device(&d, dent->d_name, subsystem_type, true, flags);
-        if (ret)
-            continue;
-
-        if (i >= MAX_DRM_NODES) {
-            fprintf(stderr, "More than %d drm nodes detected. "
-                    "Please report a bug - that should not happen.\n"
-                    "Skipping extra nodes\n", MAX_DRM_NODES);
-            break;
-        }
-        local_devices[i] = d;
-        i++;
-    }
-    node_count = i;
-
-    drmFoldDuplicatedDevices(local_devices, node_count);
-
-    *device = NULL;
-
-    for (i = 0; i < node_count; i++) {
-        if (!local_devices[i])
-            continue;
-
-        if (drm_device_has_rdev(local_devices[i], find_rdev))
-            *device = local_devices[i];
-        else
-            drmFreeDevice(&local_devices[i]);
-    }
-
-    closedir(sysdir);
-    if (*device == NULL)
+    ret = process_device(&d, node, true, flags);
+    if (ret) {
+        free(node);
         return -ENODEV;
+    }
+
+    ret = process_device_nodes(d, node);
+    free(node);
+    if (ret) {
+        drmFreeDevice(&d);
+        return -ENODEV;
+    }
+
+    *device = d;
     return 0;
-#endif
 }
 
 /**
@@ -4231,11 +4056,13 @@ drm_public int drmGetDevice(int fd, drmDevicePtr *device)
 drm_public int drmGetDevices2(uint32_t flags, drmDevicePtr devices[],
                               int max_devices)
 {
-    drmDevicePtr local_devices[MAX_DRM_NODES];
     drmDevicePtr device;
     DIR *sysdir;
     struct dirent *dent;
-    int ret, i, node_count, device_count;
+    char node[PATH_MAX + 1];
+    int ret, device_count = 0;
+    const char *prim_dname = drmGetMinorName(DRM_NODE_PRIMARY);
+    const int dname_len = strlen(prim_dname);
 
     if (drm_device_validate_flags(flags))
         return -EINVAL;
@@ -4244,34 +4071,27 @@ drm_public int drmGetDevices2(uint32_t flags, drmDevicePtr devices[],
     if (!sysdir)
         return -errno;
 
-    i = 0;
     while ((dent = readdir(sysdir))) {
-        ret = process_device(&device, dent->d_name, -1, devices != NULL, flags);
+        /* All DRM devices must have a card/primary node */
+        if (strncmp(dent->d_name, prim_dname, dname_len) != 0)
+            continue;
+
+        snprintf(node, PATH_MAX, "%s/%s", DRM_DIR_NAME, dent->d_name);
+
+        ret = process_device(&device, node, devices != NULL, flags);
         if (ret)
             continue;
 
-        if (i >= MAX_DRM_NODES) {
-            fprintf(stderr, "More than %d drm nodes detected. "
-                    "Please report a bug - that should not happen.\n"
-                    "Skipping extra nodes\n", MAX_DRM_NODES);
-            break;
-        }
-        local_devices[i] = device;
-        i++;
-    }
-    node_count = i;
-
-    drmFoldDuplicatedDevices(local_devices, node_count);
-
-    device_count = 0;
-    for (i = 0; i < node_count; i++) {
-        if (!local_devices[i])
+        ret = process_device_nodes(device, node);
+        if (ret) {
+            drmFreeDevice(&device);
             continue;
+        }
 
         if ((devices != NULL) && (device_count < max_devices))
-            devices[device_count] = local_devices[i];
+            devices[device_count] = device;
         else
-            drmFreeDevice(&local_devices[i]);
+            drmFreeDevice(&device);
 
         device_count++;
     }
@@ -4301,24 +4121,13 @@ drm_public int drmGetDevices(drmDevicePtr devices[], int max_devices)
     return drmGetDevices2(DRM_DEVICE_GET_PCI_REVISION, devices, max_devices);
 }
 
-drm_public char *drmGetDeviceNameFromFd2(int fd)
+static char *
+drmGetDeviceNameFromMajMin(int maj, int min)
 {
 #ifdef __linux__
-    struct stat sbuf;
     char path[PATH_MAX + 1], *value;
-    unsigned int maj, min;
-
-    if (fstat(fd, &sbuf))
-        return NULL;
-
-    maj = major(sbuf.st_rdev);
-    min = minor(sbuf.st_rdev);
-
-    if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode))
-        return NULL;
 
     snprintf(path, sizeof(path), "/sys/dev/char/%d:%d", maj, min);
-
     value = sysfs_uevent_get(path, "DEVNAME");
     if (!value)
         return NULL;
@@ -4327,38 +4136,19 @@ drm_public char *drmGetDeviceNameFromFd2(int fd)
     free(value);
 
     return strdup(path);
-#elif defined(__FreeBSD__)
-    return drmGetDeviceNameFromFd(fd);
 #else
-    struct stat      sbuf;
-    char             node[PATH_MAX + 1];
-    const char      *dev_name;
-    int              node_type;
-    int              maj, min, n;
-
-    if (fstat(fd, &sbuf))
-        return NULL;
-
-    maj = major(sbuf.st_rdev);
-    min = minor(sbuf.st_rdev);
-
-    if (!drmNodeIsDRM(maj, min) || !S_ISCHR(sbuf.st_mode))
-        return NULL;
-
-    node_type = drmGetMinorType(maj, min);
-    if (node_type == -1)
-        return NULL;
-
-    dev_name = drmGetDeviceName(node_type);
-    if (!dev_name)
-        return NULL;
-
-    n = snprintf(node, PATH_MAX, dev_name, DRM_DIR_NAME, min);
-    if (n == -1 || n >= PATH_MAX)
-      return NULL;
-
-    return strdup(node);
+    /* Use buggy fallback helper - auto-detect the node type */
+    return buggyMinorNameForMajMin(maj, min, -1);
 #endif
+}
+
+drm_public char *drmGetDeviceNameFromFd2(int fd)
+{
+    int maj, min;
+
+    if (fd_to_maj_min(fd, &maj, &min))
+        return NULL;
+    return drmGetDeviceNameFromMajMin(maj, min);
 }
 
 drm_public int drmSyncobjCreate(int fd, uint32_t flags, uint32_t *handle)
