@@ -620,6 +620,23 @@ struct drm_gem_open {
 	__u64 size;
 };
 
+/** struct drm_handle_label - ioctl argument for labelling BOs.
+ *
+ * This label's a BO with a userspace label
+ *
+ */
+struct drm_handle_label {
+	/** Handle for the object being labelled. */
+	__u32 handle;
+
+	/** Label and label length (len includes the trailing NUL). */
+	__u32 len;
+	__u64 label;
+
+	/** Flags */
+	int flags;
+};
+
 #define DRM_CAP_DUMB_BUFFER		0x1
 #define DRM_CAP_VBLANK_HIGH_CRTC	0x2
 #define DRM_CAP_DUMB_PREFERRED_DEPTH	0x3
@@ -941,6 +958,8 @@ extern "C" {
 #define DRM_IOCTL_SYNCOBJ_QUERY		DRM_IOWR(0xCB, struct drm_syncobj_timeline_array)
 #define DRM_IOCTL_SYNCOBJ_TRANSFER	DRM_IOWR(0xCC, struct drm_syncobj_transfer)
 #define DRM_IOCTL_SYNCOBJ_TIMELINE_SIGNAL	DRM_IOWR(0xCD, struct drm_syncobj_timeline_array)
+#define DRM_IOCTL_HANDLE_SET_LABEL      DRM_IOWR(0xCE, struct drm_handle_label)
+#define DRM_IOCTL_HANDLE_GET_LABEL      DRM_IOWR(0xCF, struct drm_handle_label)
 
 #define DRM_IOCTL_MODE_GETFB2		DRM_IOWR(0xCE, struct drm_mode_fb_cmd2)
 

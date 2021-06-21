@@ -943,6 +943,8 @@ extern int drmSyncobjTransfer(int fd,
 			      uint32_t dst_handle, uint64_t dst_point,
 			      uint32_t src_handle, uint64_t src_point,
 			      uint32_t flags);
+extern int drmSetBufferLabel(int fd, uint32_t handle, const char *label);
+extern char* drmReadBufferLabel(int fd, uint32_t handle);
 
 #if defined(__cplusplus)
 }

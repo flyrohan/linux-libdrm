@@ -4585,3 +4585,56 @@ drm_public int drmSyncobjTransfer(int fd,
 
     return ret;
 }
+
+drm_public int drmSetBufferLabel(int fd, uint32_t handle, const char *label)
+{
+    struct drm_handle_label args = {};
+    int ret;
+
+    args.handle = handle;
+    args.label = (uintptr_t) label;
+
+    if (args.label)
+        args.len = strlen(label) + 1;
+    else
+        args.len = 0;
+
+    ret = drmIoctl(fd, DRM_IOCTL_HANDLE_SET_LABEL, &args);
+
+    return ret;
+}
+
+/**
+ * Get the label of a buffer object associated with a handle
+ *
+ * \param fd file descriptor of the drm device
+ * \param handle handle associated with buffer object
+ * \param len label length
+ *
+ * \return pointer to the label, NULL if the IOCTL failed
+ */
+
+
+drm_public char* drmReadBufferLabel(int fd, uint32_t handle)
+{
+    struct drm_handle_label args = {};
+    int ret;
+    char *label;
+
+    args.handle = handle;
+
+    ret = drmIoctl(fd, DRM_IOCTL_HANDLE_GET_LABEL, &args);
+    if (!ret)
+        return NULL;
+
+    label = malloc(args.len);
+    if (!label)
+        return NULL;
+
+    args.label = label;
+    ret = drmIoctl(fd, DRM_IOCTL_HANDLE_GET_LABEL, &args);
+    if (!ret)
+        return NULL;
+
+    return label;
+}
