@@ -1255,6 +1255,24 @@ int amdgpu_query_video_caps_info(amdgpu_device_handle dev, unsigned cap_type,
                                  unsigned size, void *value);
 
 /**
+ * Query device vbios information.
+ *
+ * The return size is query-specific and depends on the "type" parameter.
+ * No more than "size" bytes is returned.
+ *
+ * \param   dev     - \c [in] Device handle. See #amdgpu_device_initialize()
+ * \param   type    - \c [in] AMDGPU_INFO_VBIOS_*
+ * \param   size    - \c [in] Size of the returned value.
+ * \param   value   - \c [out] Pointer to the return value.
+ *
+ * \return   0 on success\n
+ *          <0 - Negative POSIX error code
+ *
+*/
+int amdgpu_query_vbios_info(amdgpu_device_handle dev, unsigned type,
+			unsigned size, void *value);
+
+/**
  * Read a set of consecutive memory-mapped registers.
  * Not all registers are allowed to be read by userspace.
  *
