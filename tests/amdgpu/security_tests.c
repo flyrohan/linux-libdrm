@@ -88,6 +88,12 @@ static struct drm_amdgpu_info_hw_ip  sdma_info;
 #define PACKET_LCOPY_SIZE         7
 #define PACKET_NOP_SIZE          12
 
+#define PACKET_LWRITE_DATA_SIZE_IN_DWORDS   64
+#define PACKET_LWRITE_DATA_SIZE_IN_BYTES    \
+            (PACKET_LWRITE_DATA_SIZE_IN_DWORDS*4)
+
+#define RAW_DATA 0xdeadbeef
+
 struct sec_amdgpu_bo {
 	struct amdgpu_bo *bo;
 	struct amdgpu_va *va;
@@ -166,6 +172,45 @@ static void amdgpu_sdma_lcopy(uint32_t *packet,
 	packet[6] = htole32((uint32_t)(dst >> 32));
 }
 
+static void amdgpu_sdma_lwrite(uint32_t *packet,
+				const uint64_t dst,
+				const uint32_t *data,
+				const uint32_t size,
+				const int secure)
+{
+	/* Set the packet to Linear write with TMZ set.
+	*/
+	int i = 0;
+	packet[0] = htole32(secure << 18 | 2);
+	packet[1] = htole32((uint32_t)(dst & 0xFFFFFFFFU));
+	packet[2] = htole32((uint32_t)(dst >> 32));
+	packet[3] = htole32(size-1);
+	while (i < size) {
+		packet[4+i] = htole32(data[i]);
+		i++;
+	}
+}
+
+static void amdgpu_sdma_atomic(uint32_t *packet,
+			const uint64_t dst,
+			const uint32_t src_data,
+			const uint32_t cmp_data,
+			const int secure)
+{
+	/* Set the packet to Atomic and ATOMIC_SWAPCMP_RTN opcode with TMZ set
+	 * loop, 1-loop_until_compare_satisfied
+	 * single_pass_atomic, 0-lru
+	 */
+	packet[0] = htole32(10 | ((0x00000008 << 9) | (secure << 2) | 1) << 16);
+	packet[1] = htole32((uint32_t)(dst & 0xFFFFFFFFU));
+	packet[2] = htole32((uint32_t)(dst >> 32));
+	packet[3] = htole32(src_data);
+	packet[4] = htole32(0x0);
+	packet[5] = htole32(cmp_data);
+	packet[6] = htole32(0x0);
+	packet[7] = htole32(0x100);
+}
+
 static void amdgpu_sdma_nop(uint32_t *packet, uint32_t nop_count)
 {
 	/* A packet of the desired number of NOPs.
@@ -206,6 +251,61 @@ static void amdgpu_bo_lcopy(struct command_ctx *ctx,
 				       ARRAY_SIZE(bos), bos,
 				       &ctx->cs_ibinfo, &ctx->cs_req,
 				       secure == 1);
+}
+
+/**
+ * amdgpu_bo_lwrite -- linear write with TMZ set, using sDMA
+ * @ctx: AMDGPU ctx to which both buffer objects belong to
+ * @dst: destination buffer object
+ * @data: source buffer object
+ * @size: size of source buffer object, in bytes.
+ * @secure: Set to 1 to perform secure write, 0 for clear
+ *
+ * Issues and waits for completion of a Linear Write with TMZ
+ * set, to the sDMA engine. @size should be a multiple of
+ * at least 16 bytes.
+ */
+static void amdgpu_bo_lwrite(struct command_ctx *ctx,
+				struct sec_amdgpu_bo *dst,
+				uint32_t *data,
+				const uint32_t size,
+				int secure)
+{
+	struct amdgpu_bo *bos[] = { dst->bo };
+	uint32_t packet[PACKET_LWRITE_DATA_SIZE_IN_DWORDS+4];
+
+	amdgpu_sdma_lwrite(packet,
+				dst->va->address, data,
+				size, secure);
+
+	amdgpu_test_exec_cs_helper_raw(ctx->dev, ctx->context,
+				AMDGPU_HW_IP_DMA, ctx->ring_id,
+				ARRAY_SIZE(packet), packet,
+				ARRAY_SIZE(bos), bos,
+				&ctx->cs_ibinfo, &ctx->cs_req,
+				secure == 1);
+}
+
+static void amdgpu_bo_compare(struct command_ctx *ctx,
+				struct sec_amdgpu_bo *dst,
+				int offset_in_bytes,
+				uint32_t src_data,
+				uint32_t cmp_ata,
+				int secure)
+{
+	struct amdgpu_bo *bos[] = { dst->bo };
+	uint32_t packet[8];
+
+	amdgpu_sdma_atomic(packet,
+				dst->va->address+offset_in_bytes,
+				src_data, cmp_ata, secure);
+
+	amdgpu_test_exec_cs_helper_raw(ctx->dev, ctx->context,
+				AMDGPU_HW_IP_DMA, ctx->ring_id,
+				ARRAY_SIZE(packet), packet,
+				ARRAY_SIZE(bos), bos,
+				&ctx->cs_ibinfo, &ctx->cs_req,
+				secure == 1);
 }
 
 /**
@@ -251,6 +351,132 @@ static int amdgpu_bo_move(struct command_ctx *ctx,
 				       &ctx->cs_ibinfo, &ctx->cs_req,
 				       secure == 1);
 	return 0;
+}
+
+static void amdgpu_security_sdma_lcopy_help(bool alice_encrypted,
+			  bool bob_encrypted, int tmz_mode)
+{
+	struct sec_amdgpu_bo alice, bob;
+	struct command_ctx   sb_ctx;
+	long page_size;
+	uint32_t data[PACKET_LWRITE_DATA_SIZE_IN_DWORDS];
+	int i, res;
+
+	page_size = sysconf(_SC_PAGESIZE);
+
+	memset(&sb_ctx, 0, sizeof(sb_ctx));
+	sb_ctx.dev = device_handle;
+	res = amdgpu_cs_ctx_create(sb_ctx.dev, &sb_ctx.context);
+	if (res) {
+		PRINT_ERROR(res);
+		return;
+	}
+
+	/* Use the first present ring.
+	 */
+	res = ffs(sdma_info.available_rings) - 1;
+	if (res == -1) {
+		PRINT_ERROR(-ENOENT);
+		goto Out_free_ctx;
+	}
+	sb_ctx.ring_id = res;
+
+	/* Allocate a buffer named Alice in VRAM.
+	 */
+	res = amdgpu_bo_alloc_map(device_handle,
+				  PACKET_LWRITE_DATA_SIZE_IN_BYTES,
+				  page_size,
+				  AMDGPU_GEM_DOMAIN_VRAM,
+				  alice_encrypted ? AMDGPU_GEM_CREATE_ENCRYPTED : 0,
+				  &alice);
+
+	if (res) {
+		PRINT_ERROR(res);
+		return;
+	}
+
+	for(i = 0; i < PACKET_LWRITE_DATA_SIZE_IN_DWORDS; i++)
+		data[i] = RAW_DATA;
+
+	/* Fill Alice with a pattern.
+	 */
+	amdgpu_bo_lwrite(&sb_ctx, &alice, data, PACKET_LWRITE_DATA_SIZE_IN_DWORDS, tmz_mode);
+
+	/* Allocate a buffer named Bob in VRAM.
+	 */
+	res = amdgpu_bo_alloc_map(device_handle,
+				PACKET_LWRITE_DATA_SIZE_IN_BYTES,
+				page_size,
+				AMDGPU_GEM_DOMAIN_VRAM,
+				bob_encrypted ? AMDGPU_GEM_CREATE_ENCRYPTED : 0,
+				&bob);
+
+	if (res) {
+		PRINT_ERROR(res);
+		goto Out_free_Alice;
+	}
+
+	/* sDMA copy from Alice to Bob.
+	 */
+	amdgpu_bo_lcopy(&sb_ctx, &bob, &alice, PACKET_LWRITE_DATA_SIZE_IN_BYTES, tmz_mode);
+
+	/* For linear write to Alice buffer
+	 * Only Alice is regular buffer in non-TMZ mode
+	 * The data will not be encrypted.
+	 */
+	if((!alice_encrypted) && (tmz_mode == 0)) {
+		CU_ASSERT_EQUAL(memcmp(alice.bo->cpu_ptr, (void*)&data[0],
+				PACKET_LWRITE_DATA_SIZE_IN_BYTES), 0);
+	} else {
+		CU_ASSERT_NOT_EQUAL(memcmp(alice.bo->cpu_ptr, (void*)&data[0],
+				PACKET_LWRITE_DATA_SIZE_IN_BYTES), 0);
+	}
+
+	/* For linear copy from Alice to Bob buffer
+	 * Only Bob is regular buffer in non-TMZ mode
+	 * The data will not be encrypted.
+	 */
+	if ((!bob_encrypted) && (tmz_mode == 0)) {
+		CU_ASSERT_EQUAL(memcmp(alice.bo->cpu_ptr, bob.bo->cpu_ptr,
+				PACKET_LWRITE_DATA_SIZE_IN_BYTES), 0);
+	} else {
+		CU_ASSERT_NOT_EQUAL(memcmp(alice.bo->cpu_ptr, bob.bo->cpu_ptr,
+				PACKET_LWRITE_DATA_SIZE_IN_BYTES), 0);
+	}
+
+	/* For Alice/Bob is secure buffer in TMZ mode
+	 * Using sdma atomic and ATOMIC_SWAPCMP_RTN opcode with TMZ set to
+	 * verify the encrypted data in Bob buffer is equal to the original
+	 * data.
+	 */
+	if ((tmz_mode == 1) && (alice_encrypted) && (bob_encrypted)) {
+		uint32_t bo_cpu_origin;
+		i = 0;
+		while (i < PACKET_LWRITE_DATA_SIZE_IN_DWORDS) {
+			bo_cpu_origin = *((uint32_t*)bob.bo->cpu_ptr+i);
+			amdgpu_bo_compare(&sb_ctx, &bob, i*4, 0x12345678, data[i], tmz_mode);
+			CU_ASSERT_NOT_EQUAL(*((uint32_t*)bob.bo->cpu_ptr+i), bo_cpu_origin);
+			i++;
+		}
+	}
+
+Out_free_Alice:
+	amdgpu_bo_unmap_free(&alice, PACKET_LWRITE_DATA_SIZE_IN_BYTES);
+Out_free_ctx:
+	res = amdgpu_cs_ctx_free(sb_ctx.context);
+	CU_ASSERT_EQUAL(res, 0);
+}
+
+static void amdgpu_security_sdma_lcopy_tests()
+{
+	amdgpu_security_sdma_lcopy_help(false, false, 0);
+	amdgpu_security_sdma_lcopy_help(true, false, 0);
+	amdgpu_security_sdma_lcopy_help(false, true, 0);
+	amdgpu_security_sdma_lcopy_help(true, true, 0);
+	amdgpu_security_sdma_lcopy_help(false, false, 1);
+	amdgpu_security_sdma_lcopy_help(true, false, 1);
+	amdgpu_security_sdma_lcopy_help(false, true, 1);
+	amdgpu_security_sdma_lcopy_help(true, true, 1);
 }
 
 /* Safe, O Sec!
@@ -420,6 +646,7 @@ CU_TestInfo security_tests[] = {
 	{ "allocate secure buffer test",        amdgpu_security_alloc_buf_test },
 	{ "graphics secure command submission", amdgpu_security_gfx_submission_test },
 	{ "sDMA secure command submission",     amdgpu_security_sdma_submission_test },
+	{ "sDMA secure linear copy test",       amdgpu_security_sdma_lcopy_tests },
 	{ SECURE_BOUNCE_TEST_STR,               amdgpu_secure_bounce },
 	CU_TEST_INFO_NULL,
 };
