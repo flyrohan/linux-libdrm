@@ -47,7 +47,6 @@ static struct drm_amdgpu_info_hw_ip  sdma_info;
 #define ARRAY_SIZE(_Arr)  (sizeof(_Arr)/sizeof((_Arr)[0]))
 #endif
 
-
 /* --------------------- Secure bounce test ------------------------ *
  *
  * The secure bounce test tests that we can evict a TMZ buffer,
@@ -88,9 +87,13 @@ static struct drm_amdgpu_info_hw_ip  sdma_info;
 #define PACKET_LCOPY_SIZE         7
 #define PACKET_NOP_SIZE          12
 
-#define PACKET_LWRITE_DATA_SIZE_IN_DWORDS   64
-#define PACKET_LWRITE_DATA_SIZE_IN_BYTES    \
-            (PACKET_LWRITE_DATA_SIZE_IN_DWORDS*4)
+#define PACKET_LWRITE_DATA_SIZE_IN_DWORDS	64
+#define PACKET_LWRITE_DATA_SIZE_IN_BYTES	\
+			(PACKET_LWRITE_DATA_SIZE_IN_DWORDS*4)
+
+#define SECURE_BOUNCE_BUFFER_SIZE_IN_DWORDS  (4 * 1024)
+#define SECURE_BOUNCE_BUFFER_SIZE_IN_BYTES	\
+			(SECURE_BOUNCE_BUFFER_SIZE_IN_DWORDS*4)
 
 #define RAW_DATA 0xdeadbeef
 
@@ -396,7 +399,7 @@ static void amdgpu_security_sdma_lcopy_help(bool alice_encrypted,
 	}
 
 	for(i = 0; i < PACKET_LWRITE_DATA_SIZE_IN_DWORDS; i++)
-		data[i] = RAW_DATA;
+		data[i] = 0xdeadbeef;
 
 	/* Fill Alice with a pattern.
 	 */
@@ -479,19 +482,15 @@ static void amdgpu_security_sdma_lcopy_tests()
 	amdgpu_security_sdma_lcopy_help(true, true, 1);
 }
 
-/* Safe, O Sec!
- */
-static const uint8_t secure_pattern[] = { 0x5A, 0xFE, 0x05, 0xEC };
-
-#define SECURE_BUFFER_SIZE       (4 * 1024 * sizeof(secure_pattern))
-
 static void amdgpu_secure_bounce(void)
 {
-	struct sec_amdgpu_bo alice, bob;
-	struct command_ctx   sb_ctx;
+	struct sec_amdgpu_bo a_bo, b_bo, c_bo, d_bo;
+	struct command_ctx	 sb_ctx;
 	long page_size;
-	uint8_t *pp;
 	int res;
+	int i;
+	uint32_t data[SECURE_BOUNCE_BUFFER_SIZE_IN_DWORDS];
+	uint32_t bo_cpu_origin;
 
 	page_size = sysconf(_SC_PAGESIZE);
 
@@ -514,75 +513,140 @@ static void amdgpu_secure_bounce(void)
 	}
 	sb_ctx.ring_id = res;
 
-	/* Allocate a buffer named Alice in VRAM.
+	/* Allocate a buffer named A/B/C/D in VRAM.
+	 * A and D is non-encrypted buffer
+	 * B and C is encrypted buffer
 	 */
 	res = amdgpu_bo_alloc_map(device_handle,
-				  SECURE_BUFFER_SIZE,
-				  page_size,
-				  AMDGPU_GEM_DOMAIN_VRAM,
-				  AMDGPU_GEM_CREATE_ENCRYPTED,
-				  &alice);
+				SECURE_BOUNCE_BUFFER_SIZE_IN_BYTES,
+				page_size,
+				AMDGPU_GEM_DOMAIN_VRAM,
+				0,
+				&a_bo);
 	if (res) {
 		PRINT_ERROR(res);
 		CU_FAIL(SECURE_BOUNCE_FAILED_STR);
 		return;
 	}
 
-	/* Fill Alice with a pattern.
-	 */
-	for (pp = alice.bo->cpu_ptr;
-	     pp < (typeof(pp)) alice.bo->cpu_ptr + SECURE_BUFFER_SIZE;
-	     pp += sizeof(secure_pattern))
-		memcpy(pp, secure_pattern, sizeof(secure_pattern));
-
-	/* Allocate a buffer named Bob in VRAM.
-	 */
 	res = amdgpu_bo_alloc_map(device_handle,
-				  SECURE_BUFFER_SIZE,
-				  page_size,
-				  AMDGPU_GEM_DOMAIN_VRAM,
-				  0 /* AMDGPU_GEM_CREATE_ENCRYPTED */,
-				  &bob);
+				SECURE_BOUNCE_BUFFER_SIZE_IN_BYTES,
+				page_size,
+				AMDGPU_GEM_DOMAIN_VRAM,
+				AMDGPU_GEM_CREATE_ENCRYPTED,
+				&b_bo);
 	if (res) {
 		PRINT_ERROR(res);
 		CU_FAIL(SECURE_BOUNCE_FAILED_STR);
-		goto Out_free_Alice;
+		goto Out_free_A;
 	}
 
-	/* sDMA clear copy from Alice to Bob.
-	 */
-	amdgpu_bo_lcopy(&sb_ctx, &bob, &alice, SECURE_BUFFER_SIZE, 0);
+	res = amdgpu_bo_alloc_map(device_handle,
+				SECURE_BOUNCE_BUFFER_SIZE_IN_BYTES,
+				page_size,
+				AMDGPU_GEM_DOMAIN_VRAM,
+				AMDGPU_GEM_CREATE_ENCRYPTED,
+				&c_bo);
+	if (res) {
+		PRINT_ERROR(res);
+		CU_FAIL(SECURE_BOUNCE_FAILED_STR);
+		goto Out_free_B;
+	}
 
-	/* Move Bob to the GTT domain.
+	res = amdgpu_bo_alloc_map(device_handle,
+				SECURE_BOUNCE_BUFFER_SIZE_IN_BYTES,
+				page_size,
+				AMDGPU_GEM_DOMAIN_VRAM,
+				0,
+				&d_bo);
+	if (res) {
+		PRINT_ERROR(res);
+		CU_FAIL(SECURE_BOUNCE_FAILED_STR);
+		goto Out_free_C;
+	}
+
+	for(i = 0; i < SECURE_BOUNCE_BUFFER_SIZE_IN_DWORDS; i++)
+		data[i] = RAW_DATA;
+
+	/* Fill A with a pattern.
 	 */
-	res = amdgpu_bo_move(&sb_ctx, bob.bo, AMDGPU_GEM_DOMAIN_GTT, 0);
+	memcpy(a_bo.bo->cpu_ptr, data, SECURE_BOUNCE_BUFFER_SIZE_IN_BYTES);
+
+	/* sDMA secure copy from A to B.
+	 */
+	amdgpu_bo_lcopy(&sb_ctx, &b_bo, &a_bo, SECURE_BOUNCE_BUFFER_SIZE_IN_BYTES, 1);
+
+	/* Move B to the GTT domain.
+	 */
+	res = amdgpu_bo_move(&sb_ctx, b_bo.bo, AMDGPU_GEM_DOMAIN_GTT, 0);
 	if (res) {
 		PRINT_ERROR(res);
 		CU_FAIL(SECURE_BOUNCE_FAILED_STR);
 		goto Out_free_all;
 	}
 
-	/* sDMA clear copy from Bob to Alice.
+	/* sDMA secure copy from B to C.
 	 */
-	amdgpu_bo_lcopy(&sb_ctx, &alice, &bob, SECURE_BUFFER_SIZE, 0);
+	amdgpu_bo_lcopy(&sb_ctx, &c_bo, &b_bo, SECURE_BOUNCE_BUFFER_SIZE_IN_BYTES, 1);
 
-	/* Verify the contents of Alice.
+	/* Move C to the GTT domain.
 	 */
-	for (pp = alice.bo->cpu_ptr;
-	     pp < (typeof(pp)) alice.bo->cpu_ptr + SECURE_BUFFER_SIZE;
-	     pp += sizeof(secure_pattern)) {
-		res = memcmp(pp, secure_pattern, sizeof(secure_pattern));
-		if (res) {
-			fprintf(stderr, SECURE_BOUNCE_FAILED_STR);
-			CU_FAIL(SECURE_BOUNCE_FAILED_STR);
-			break;
-		}
+	res = amdgpu_bo_move(&sb_ctx, c_bo.bo, AMDGPU_GEM_DOMAIN_GTT, 0);
+	if (res) {
+		PRINT_ERROR(res);
+		CU_FAIL(SECURE_BOUNCE_FAILED_STR);
+		goto Out_free_all;
+	}
+
+	/* sDMA clear copy from C to D.
+	 */
+	amdgpu_bo_lcopy(&sb_ctx, &d_bo, &c_bo, SECURE_BOUNCE_BUFFER_SIZE_IN_BYTES, 0);
+
+	/* Verify the contents of A.
+	 */
+	CU_ASSERT_EQUAL(*((uint32_t*)a_bo.bo->cpu_ptr), RAW_DATA);
+
+	/* Verify the contents of B.
+	 * The encrypted data of B buffer should be same raw data.
+	 */
+	i = 0;
+	while (i < SECURE_BOUNCE_BUFFER_SIZE_IN_DWORDS) {
+		bo_cpu_origin = *((uint32_t*)b_bo.bo->cpu_ptr+i);
+		amdgpu_bo_compare(&sb_ctx, &b_bo, i*4, 0x12345678, RAW_DATA, 1);
+		CU_ASSERT_NOT_EQUAL(*((uint32_t*)b_bo.bo->cpu_ptr+i), bo_cpu_origin);
+		i++;
+	}
+
+	/* Verify the contents of C.
+	 * The encrypted data of C buffer should be same raw data.
+	 */
+	i = 0;
+	while (i < SECURE_BOUNCE_BUFFER_SIZE_IN_DWORDS) {
+		bo_cpu_origin = *((uint32_t*)c_bo.bo->cpu_ptr+i);
+		amdgpu_bo_compare(&sb_ctx, &c_bo, i*4, 0x12345678, RAW_DATA, 1);
+		CU_ASSERT_NOT_EQUAL(*((uint32_t*)c_bo.bo->cpu_ptr+i), bo_cpu_origin);
+		i++;
+	}
+
+	/* Verify the contents of D.
+	 * The encrypted data of D buffer should be different to raw data.
+	 */
+	i = 0;
+	while (i < SECURE_BOUNCE_BUFFER_SIZE_IN_DWORDS) {
+		bo_cpu_origin = *((uint32_t*)d_bo.bo->cpu_ptr+i);
+		amdgpu_bo_compare(&sb_ctx, &d_bo, i*4, 0x12345678, RAW_DATA, 1);
+		CU_ASSERT_EQUAL(*((uint32_t*)d_bo.bo->cpu_ptr+i), bo_cpu_origin);
+		i++;
 	}
 
 Out_free_all:
-	amdgpu_bo_unmap_free(&bob, SECURE_BUFFER_SIZE);
-Out_free_Alice:
-	amdgpu_bo_unmap_free(&alice, SECURE_BUFFER_SIZE);
+	amdgpu_bo_unmap_free(&d_bo, SECURE_BOUNCE_BUFFER_SIZE_IN_BYTES);
+Out_free_C:
+	amdgpu_bo_unmap_free(&c_bo, SECURE_BOUNCE_BUFFER_SIZE_IN_BYTES);
+Out_free_B:
+	amdgpu_bo_unmap_free(&b_bo, SECURE_BOUNCE_BUFFER_SIZE_IN_BYTES);
+Out_free_A:
+	amdgpu_bo_unmap_free(&a_bo, SECURE_BOUNCE_BUFFER_SIZE_IN_BYTES);
 Out_free_ctx:
 	res = amdgpu_cs_ctx_free(sb_ctx.context);
 	CU_ASSERT_EQUAL(res, 0);
