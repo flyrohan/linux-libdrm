@@ -62,15 +62,17 @@ CU_BOOL suite_hotunplug_tests_enable(void)
 		return CU_FALSE;
 	}
 
-	/* Disable until the hot-unplug support in kernel gets into drm-next */
-	if (major_version < 0xff)
-		enable = false;
-
 	if (amdgpu_device_initialize(drm_amdgpu[0], &major_version,
 					     &minor_version, &device_handle))
 		return CU_FALSE;
 
-	/* TODO Once DRM version for unplug feature ready compare here agains it*/
+	if ((major_version < 3) ||
+		((major_version == 3) && (minor_version < 43))) {
+		printf("\n\nDon't support hot plug tests, kernel DRM version (%d.%d)\n",
+		       major_version, minor_version);
+		enable = CU_FALSE;
+	}
+
 
 	if (amdgpu_device_deinitialize(device_handle))
 		return CU_FALSE;
