@@ -99,9 +99,7 @@ int main(int argc, char** argv)
 		goto err;
 
 	printf("%s: All ok!\n", __func__);
-
-	kms_destroy(&kms);
-	return 0;
+	ret = 0;
 
 err:
 	kms_destroy(&kms);
