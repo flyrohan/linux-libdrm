@@ -23,6 +23,7 @@ rst_pages = [
   ['drm-kms', '7'],
   ['drm-memory', '7'],
   ['drmAvailable', '3'],
+  ['drmModeFormats', '3'],
   ['drmHandleEvent', '3'],
   ['drmModeGetResources', '3'],
 ]

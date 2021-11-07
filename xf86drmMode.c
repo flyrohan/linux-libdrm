@@ -50,6 +50,7 @@
 #include "xf86drmMode.h"
 #include "xf86drm.h"
 #include <drm.h>
+#include <drm_fourcc.h>
 #include <string.h>
 #include <dirent.h>
 #include <unistd.h>
@@ -725,6 +726,149 @@ drm_public drmModePropertyBlobPtr drmModeGetPropertyBlob(int fd,
 err_allocs:
 	drmFree(U642VOID(blob.data));
 	return r;
+}
+
+static inline uint32_t *
+formats_ptr(struct drm_format_modifier_blob *blob)
+{
+	return (uint32_t *)(((uint8_t *)blob) + blob->formats_offset);
+}
+
+static inline struct drm_format_modifier *
+modifiers_ptr(struct drm_format_modifier_blob *blob)
+{
+	return (struct drm_format_modifier *)(((uint8_t *)blob) +
+					      blob->modifiers_offset);
+}
+
+/* Free drmModeFormats version 1 */
+drm_public void
+drmModeFreeFormats(drmModeFormatsPtr drm_mode_fmt)
+{
+	if (!drm_mode_fmt)
+		return;
+
+	for (uint32_t i = 0; i < drm_mode_fmt->count; i++)
+		drmFree(drm_mode_fmt->formats[i].modifiers);
+
+	drmFree(drm_mode_fmt);
+}
+
+/* Allocate memory for drmModeFormats version 1 */
+drm_public drmModeFormatsPtr
+drmModeAllocFormats(const uint32_t count)
+{
+	drmModeFormats *formats;
+	/* drmMalloc takes an int, make sure does not overflow */
+	static const uint32_t max_count =
+		(INT_MAX - sizeof(*formats)) / sizeof(formats->formats[0]);
+
+	if (!count || count > max_count)
+		return NULL;
+
+	formats = drmMalloc(sizeof(*formats) +
+			    sizeof(formats->formats[0]) * count);
+	if (!formats)
+		return NULL;
+
+	formats->count = count;
+
+	return formats;
+}
+
+/**
+ * Populate drmModeForamts version 1
+ *
+ * This function requires a drm_format_modifier_blob with KMS property
+ * IN_FORMATS version 1. By design, future versions of the blob should
+ * not break previous ones, so drmModePopulateFormats() is expected to
+ * work with blob version >= 1.
+ *
+ * In order to add support for newer version of DRM/KMS property blobs,
+ * new data types and related symbols must be introduced. For instance,
+ * a newer version of the KMS property "IN_FORMATS" could be supported
+ * as follows:
+ *
+ *   struct _drmModeFormats2
+ *   drmModeFreeFormats2
+ *   drmModeAllocFormats2
+ *   drmModePopulateFormats2
+ *
+ * libdrm consumers assume backwards compatibility, old data types and
+ * symbols that libdrm exposes must remain supported.
+ */
+drm_public int
+drmModePopulateFormats(drmModePropertyBlobPtr blob, drmModeFormatsPtr *out_formats)
+{
+	struct drm_format_modifier_blob *fmt_mod_blob;
+	struct drm_format_modifier *blob_modifiers;
+	drmModeFormatsPtr drm_mode_fmt;
+	uint32_t *blob_formats;
+
+	if (!blob || !out_formats)
+		return -EINVAL;
+
+	fmt_mod_blob = blob->data;
+
+	if (!fmt_mod_blob->count_formats)
+		return -EINVAL;
+
+	blob_formats = formats_ptr(fmt_mod_blob);
+	blob_modifiers = modifiers_ptr(fmt_mod_blob);
+	drm_mode_fmt = drmModeAllocFormats(fmt_mod_blob->count_formats);
+	if (!drm_mode_fmt)
+		return -ENOMEM;
+
+	drm_mode_fmt->count = 0;
+
+	for (uint32_t i = 0; i < fmt_mod_blob->count_formats; i++) {
+		uint32_t count_valid_modifiers = 0;
+		uint64_t *modifiers = NULL;
+
+		for (uint32_t j = 0; j < fmt_mod_blob->count_modifiers; j++) {
+			struct drm_format_modifier *mod = &blob_modifiers[j];
+
+			if ((i < mod->offset) || (i > mod->offset + 63))
+				continue;
+			if (!(mod->formats & (1 << (i - mod->offset))))
+				continue;
+
+			modifiers = realloc(modifiers,
+					    (count_valid_modifiers + 1) *
+					    sizeof(*modifiers));
+			if (!modifiers)
+				goto err_allocs;
+
+			modifiers[count_valid_modifiers++] = mod->modifier;
+		}
+
+		/* Couldn't find valid modifiers, fallback to use linear */
+		if (count_valid_modifiers == 0) {
+			modifiers = drmMalloc(sizeof(*modifiers));
+			if (!modifiers)
+				goto err_allocs;
+
+			*modifiers = DRM_FORMAT_MOD_LINEAR;
+			count_valid_modifiers = 1;
+		}
+
+		drm_mode_fmt->formats[drm_mode_fmt->count].format = blob_formats[i];
+		drm_mode_fmt->formats[drm_mode_fmt->count].modifiers = modifiers;
+		drm_mode_fmt->formats[drm_mode_fmt->count].count_modifiers =
+			count_valid_modifiers;
+
+		/* If realloc fails, in order to free all previoulsy allocated
+		 * modifiers, update drm_mode_fmt->count on every iteration.
+		 */
+		drm_mode_fmt->count++;
+	}
+
+	*out_formats = drm_mode_fmt;
+	return 0;
+
+err_allocs:
+	drmModeFreeFormats(drm_mode_fmt);
+	return -ENOMEM;
 }
 
 drm_public void drmModeFreePropertyBlob(drmModePropertyBlobPtr ptr)
