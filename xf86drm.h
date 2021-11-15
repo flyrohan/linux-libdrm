@@ -916,6 +916,8 @@ extern void drmFreeDevices(drmDevicePtr devices[], int count);
 #define DRM_DEVICE_GET_PCI_REVISION (1 << 0)
 extern int drmGetDevice2(int fd, uint32_t flags, drmDevicePtr *device);
 extern int drmGetDevices2(uint32_t flags, drmDevicePtr devices[], int max_devices);
+extern int drmGetDeviceFromMajorMinor(int maj, int min,
+				      uint32_t flags, drmDevicePtr *device);
 
 extern int drmDevicesEqual(drmDevicePtr a, drmDevicePtr b);
 
