@@ -57,6 +57,7 @@ amdgpu_device_get_fd
 amdgpu_device_initialize
 amdgpu_find_bo_by_cpu_mapping
 amdgpu_get_marketing_name
+amdgpu_profile
 amdgpu_query_buffer_size_alignment
 amdgpu_query_crtc_from_id
 amdgpu_query_firmware_version

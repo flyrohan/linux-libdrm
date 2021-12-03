@@ -311,3 +311,22 @@ drm_public int amdgpu_query_sw_info(amdgpu_device_handle dev,
 	}
 	return -EINVAL;
 }
+
+drm_public int amdgpu_profile(amdgpu_device_handle dev,
+			      uint32_t op,
+			      uint32_t flags,
+			      uint64_t *out_flags)
+{
+	union drm_amdgpu_profile profile;
+	int r;
+
+	memset(&profile, 0, sizeof(profile));
+	profile.in.op = op,
+	profile.in.flags = flags;
+
+	r = drmCommandWriteRead(dev->fd, DRM_AMDGPU_PROFILE,
+				&profile, sizeof(profile));
+	if (!r && out_flags)
+		*out_flags = profile.out.flags;
+	return r;
+}

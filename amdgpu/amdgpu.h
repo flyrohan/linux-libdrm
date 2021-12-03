@@ -1855,6 +1855,21 @@ int amdgpu_vm_reserve_vmid(amdgpu_device_handle dev, uint32_t flags);
 */
 int amdgpu_vm_unreserve_vmid(amdgpu_device_handle dev, uint32_t flags);
 
+/**
+ * Set or query the stable power state for GPU profiling.
+ *
+ * \param   dev        - \c [in] device handle
+ * \param   op         - \c [in] AMDGPU_PROFILE_OP_*
+ * \param   flags      - \c [in] AMDGPU_PROFILE_FLAGS_STABLE_PSTATE_*
+ * \param   out_flags  - \c [out] output current stable pstate
+ *
+ * \return  0 on success otherwise POSIX Error code.
+ */
+int amdgpu_profile(amdgpu_device_handle dev,
+		   uint32_t op,
+		   uint32_t flags,
+		   uint64_t *out_flags);
+
 #ifdef __cplusplus
 }
 #endif
