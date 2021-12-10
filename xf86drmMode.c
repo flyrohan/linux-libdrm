@@ -1470,8 +1470,10 @@ static int sort_req_list(const void *misc, const void *other)
 		return -1;
 	else if (first->object_id > second->object_id)
 		return 1;
+	else if (first->property_id != second->property_id)
+		return first->property_id - second->property_id;
 	else
-		return second->property_id - first->property_id;
+		return (int) ((ptrdiff_t) (first - second));
 }
 
 drm_public int drmModeAtomicCommit(int fd, drmModeAtomicReqPtr req,
