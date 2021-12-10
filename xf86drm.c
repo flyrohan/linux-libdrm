@@ -101,6 +101,11 @@
 #define DRM_MAJOR 226 /* Linux */
 #endif
 
+#ifdef __OpenBSD__
+#define NO_MKNOD
+#define X_PRIVSEP
+#endif
+
 #if defined(__OpenBSD__) || defined(__DragonFly__)
 struct drm_pciinfo {
 	uint16_t	domain;
@@ -731,7 +736,7 @@ static int drmMatchBusID(const char *id1, const char *id2, int pci_domain_ok)
  * If any other failure happened then it will output error message using
  * drmMsg() call.
  */
-#if !UDEV
+#if !UDEV && !defined(NO_MKNOD)
 static int chown_check_return(const char *path, uid_t owner, gid_t group)
 {
         int rv;
@@ -762,6 +767,18 @@ static const char *drmGetDeviceName(int type)
     return NULL;
 }
 
+#ifdef X_PRIVSEP
+static int
+_priv_open_device(const char *path)
+{
+	drmMsg("_priv_open_device\n");
+	return open(path, O_RDWR | O_CLOEXEC, 0);
+}
+
+drm_public int priv_open_device(const char *)
+	__attribute__((weak, alias ("_priv_open_device")));
+#endif
+
 /**
  * Open the DRM device, creating it if necessary.
  *
@@ -783,7 +800,7 @@ static int drmOpenDevice(dev_t dev, int minor, int type)
     int             fd;
     mode_t          devmode = DRM_DEV_MODE, serv_mode;
     gid_t           serv_group;
-#if !UDEV
+#if !UDEV && !defined(NO_MKNOD)
     int             isroot  = !geteuid();
     uid_t           user    = DRM_DEV_UID;
     gid_t           group   = DRM_DEV_GID;
@@ -801,7 +818,7 @@ static int drmOpenDevice(dev_t dev, int minor, int type)
         devmode &= ~(S_IXUSR|S_IXGRP|S_IXOTH);
     }
 
-#if !UDEV
+#if !UDEV && !defined(NO_MKNOD)
     if (stat(DRM_DIR_NAME, &st)) {
         if (!isroot)
             return DRM_ERR_NOT_ROOT;
@@ -823,7 +840,7 @@ static int drmOpenDevice(dev_t dev, int minor, int type)
         chown_check_return(buf, user, group);
         chmod(buf, devmode);
     }
-#else
+#elif UDEV
     /* if we modprobed then wait for udev */
     {
         int udev_count = 0;
@@ -848,13 +865,17 @@ wait_for_udev:
     }
 #endif
 
+#ifndef X_PRIVSEP
     fd = open(buf, O_RDWR | O_CLOEXEC, 0);
+#else
+    fd = priv_open_device(buf);
+#endif
     drmMsg("drmOpenDevice: open result is %d, (%s)\n",
            fd, fd < 0 ? strerror(errno) : "OK");
     if (fd >= 0)
         return fd;
 
-#if !UDEV
+#if !UDEV && !defined(NO_MKNOD)
     /* Check if the device node is not what we expect it to be, and recreate it
      * and try again if so.
      */
@@ -906,8 +927,13 @@ static int drmOpenMinor(int minor, int create, int type)
         return -EINVAL;
 
     sprintf(buf, dev_name, DRM_DIR_NAME, minor);
-    if ((fd = open(buf, O_RDWR | O_CLOEXEC, 0)) >= 0)
-        return fd;
+#ifndef X_PRIVSEP
+    fd = open(buf, O_RDWR | O_CLOEXEC, 0);
+#else
+    fd = priv_open_device(buf);
+#endif
+    if (fd >= 0)
+	return fd;
     return -errno;
 }
 
