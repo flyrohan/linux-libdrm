@@ -24,7 +24,7 @@ libdrm_omap = library(
   include_directories : [inc_root, inc_drm],
   c_args : libdrm_c_args,
   link_with : libdrm,
-  dependencies : [dep_pthread_stubs, dep_atomic_ops],
+  dependencies : [dep_threads, dep_atomic_ops],
   version : '1.0.0',
   install : true,
 )

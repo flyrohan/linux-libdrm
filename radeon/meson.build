@@ -31,7 +31,7 @@ libdrm_radeon = library(
   c_args : libdrm_c_args,
   include_directories : [inc_root, inc_drm],
   link_with : libdrm,
-  dependencies : [dep_pthread_stubs, dep_atomic_ops],
+  dependencies : [dep_threads, dep_atomic_ops],
   version : '1.0.1',
   install : true,
 )
