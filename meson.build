@@ -308,22 +308,22 @@ libdrm_files = [files(
   config_file, format_mod_static_table
 ]
 
+# Build an unversioned so on android
 if android
-  libdrm = library('drm', libdrm_files,
-    c_args : libdrm_c_args,
-    dependencies : [dep_valgrind, dep_rt, dep_m],
-    include_directories : inc_drm,
-    install : true,
-  )
+  libdrm_kw = {}
 else
-  libdrm = library('drm', libdrm_files,
-    c_args : libdrm_c_args,
-    dependencies : [dep_valgrind, dep_rt, dep_m],
-    include_directories : inc_drm,
-    install : true,
-    version: '2.4.0'
-  )
+  libdrm_kw = {'version' : '2.4.0'}
 endif
+
+libdrm = library(
+  'drm',
+  libdrm_files,
+  c_args : libdrm_c_args,
+  dependencies : [dep_valgrind, dep_rt, dep_m],
+  include_directories : inc_drm,
+  install : true,
+  kwargs : libdrm_kw,
+)
 
 test(
   'core-symbols-check',
@@ -339,6 +339,10 @@ ext_libdrm = declare_dependency(
   link_with : libdrm,
   include_directories : [inc_root, inc_drm],
 )
+
+if meson.version().version_compare('>= 0.54.0')
+  meson.override_dependency('libdrm', ext_libdrm)
+endif
 
 install_headers('libsync.h', 'xf86drm.h', 'xf86drmMode.h')
 install_headers(
