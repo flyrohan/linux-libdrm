@@ -1,0 +1,42 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "App-debug",
+            "type": "cppdbg",
+            "request": "launch",
+            "MIMode": "gdb",
+            "miDebuggerPath": "/home/rohan/devel/nexell/s5pxx18/gitlab/yocto/nexell_yocto_r2/buildroot/output/host/bin/arm-linux-gdb",
+            "miDebuggerServerAddress": "192.168.1.151:1234",
+            "program": "${workspaceFolder}/tests/modetest/modetest",
+            "targetArchitecture": "arm",
+//            "args": [ "-q" ],
+            "stopAtEntry": true, /* stop at main */
+            "cwd": "${fileDirname}",
+            "externalConsole": false,
+            "logging": {
+                "engineLogging": false
+              },
+            "setupCommands": [
+                {                                                               
+                    "description": "gdb에 자동 서식 지정 사용",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {                                                               
+                    "description": "gdb ignore stop signal",                    
+                    "text": "handle SIGUSR1 nostop",
+                    "ignoreFailures": true                                      
+                },                                     
+                {
+                    "description": "Set break on main",
+                    "text": "b main",
+                    "ignoreFailures": true
+                }
+            ]
+        }
+    ]
+}
