@@ -1,4 +1,4 @@
-SUBDIRS = util kms modeprint proptest modetest vbltest
+SUBDIRS = util kms modeprint proptest modetest vbltest drmtest
 
 if HAVE_LIBKMS
 SUBDIRS += kmstest
