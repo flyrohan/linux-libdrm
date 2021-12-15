@@ -4,6 +4,7 @@ libdrm - clone form https://gitlab.freedesktop.org/mesa/drm
 Compiling
 ---------
 Checkout tag 2.4.97
+
 $> git checkout libdrm-2.4.97 -b libdrm-2.4.97
 
 Configure for the ARM architecture:
@@ -46,6 +47,8 @@ $> ./autogen.sh
  --disable-static --enable-shared
 
 Then build and install:
+
 $> make
+
 $> make DESTDIR=<path> install
 
