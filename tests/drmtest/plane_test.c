@@ -379,14 +379,13 @@ static void plane_vblank_handler(int fd, unsigned int frame, unsigned int sec,
 	int id =  pi->swap_count % PLANE_FLIP_NUM;
         double t;
 
-        vbl.request.type = DRM_VBLANK_RELATIVE | DRM_VBLANK_EVENT;
-        vbl.request.sequence = 1;
-        vbl.request.signal = (unsigned long)data;
+        pi->vbl_count++;
+        pi->swap_count++;
 
 	if (pi->draw_flip)
 		bo_fill_pattern(pi->bo[id], p->fourcc, p->w, p->h, pi->pattern[id]);
-	
-	/* note src coords (last 4 args) are in Q16 format */
+
+	/* set next plane */
 	if (drmModeSetPlane(fd, p->plane_id, p->crtc_id, pi->fb_id[id],
 		    pi->flags, pi->crtc_x, pi->crtc_y, pi->crtc_w, pi->crtc_h,
 		    0, 0, p->w << 16, p->h << 16)) {
@@ -397,10 +396,11 @@ static void plane_vblank_handler(int fd, unsigned int frame, unsigned int sec,
 	}
 
 	/* send wait for event signal with read/DRM_EVENT_VBLANK */
-	drmWaitVBlank(fd, &vbl);
+        vbl.request.type = DRM_VBLANK_RELATIVE | DRM_VBLANK_EVENT;
+        vbl.request.sequence = 1;
+        vbl.request.signal = (unsigned long)data;
 
-        pi->vbl_count++;
-        pi->swap_count++;
+	drmWaitVBlank(fd, &vbl);
 
         if (pi->vbl_count == 60) {
                 gettimeofday(&end, NULL);
