@@ -11,7 +11,8 @@
             "MIMode": "gdb",
             "miDebuggerPath": "/home/rohan/devel/nexell/s5pxx18/gitlab/yocto/nexell_yocto_r2/buildroot/output/host/bin/arm-linux-gdb",
             "miDebuggerServerAddress": "192.168.1.151:1234",
-            "program": "${workspaceFolder}/tests/modetest/modetest",
+//            "program": "${workspaceFolder}/tests/modetest/modetest",
+            "program": "${workspaceFolder}/tests/drmtest/.libs/planetest",
             "targetArchitecture": "arm",
 //            "args": [ "-q" ],
             "stopAtEntry": true, /* stop at main */
