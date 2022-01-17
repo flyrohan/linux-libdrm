@@ -1,7 +1,8 @@
 libdrm-2.4.97-branch
 ----------------------------------
 rohan
-- add plantest application to test render with SetPlane API.
+- add plantest application in [tests/drmtest] to test render with SetPlane API.
+  
 
 libdrm - userspace library for drm
 ----------------------------------
