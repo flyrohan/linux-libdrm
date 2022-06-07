@@ -3,9 +3,9 @@ libdrm - clone form https://gitlab.freedesktop.org/mesa/drm
 
 Compiling
 ---------
-Checkout 2.4.97-branch, this branch based on libdrm-2.4.97 tag
+Checkout 2.4.97-rohan, this branch based on libdrm-2.4.97 tag
 
-$> git checkout rohan-branch -b rohan-branch
+$> git checkout 2.4.97-rohan -b 2.4.97-rohan
 
 Configure for the ARM architecture:
 
