@@ -26,6 +26,7 @@ subdir('modeprint')
 subdir('proptest')
 subdir('modetest')
 subdir('vbltest')
+subdir('drmtest')
 if with_libkms
   subdir('kmstest')
 endif
