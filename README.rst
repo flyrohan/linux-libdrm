@@ -5,7 +5,7 @@ Compiling
 ---------
 Checkout 2.4.97-rohan, this branch based on libdrm-2.4.97 tag
 
-$> git checkout 2.4.97-rohan -b 2.4.97-rohan
+$> git checkout -b 2.4.97-rohan origin/2.4.97-rohan
 
 Configure for the ARM architecture:
 
