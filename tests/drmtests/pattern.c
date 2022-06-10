@@ -27,13 +27,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
 #include <drm_fourcc.h>
-
-#if HAVE_CAIRO
-#include <cairo.h>
-#include <math.h>
-#endif
 
 #include "format.h"
 #include "pattern.h"

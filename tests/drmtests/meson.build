@@ -18,9 +18,19 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-planetest = executable(
-  'planetest',
-  files('kms.c', 'buffers.c', 'format.c', 'pattern.c', 'plane_test.c'),
+plane_flip = executable(
+  'plane_flip',
+  files('kms.c', 'buffers.c', 'format.c', 'pattern.c', 'bmp.c', 'image.c', 'plane_flip.c'),
+  c_args : [libdrm_c_args, '-Wno-pointer-arith'],
+  include_directories : [inc_root, inc_tests, inc_drm],
+  dependencies : [dep_threads, dep_cairo],
+  link_with : [libdrm, libutil],
+  install : with_install_tests,
+)
+
+plane_image = executable(
+  'plane_image',
+  files('kms.c', 'buffers.c', 'format.c', 'pattern.c', 'bmp.c', 'image.c', 'plane_image.c'),
   c_args : [libdrm_c_args, '-Wno-pointer-arith'],
   include_directories : [inc_root, inc_tests, inc_drm],
   dependencies : [dep_threads, dep_cairo],

@@ -23,8 +23,8 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef UTIL_COMMON_H
-#define UTIL_COMMON_H
+#ifndef __UTIL_COMMON_H
+#define __UTIL_COMMON_H
 
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))

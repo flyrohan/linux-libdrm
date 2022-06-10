@@ -23,13 +23,17 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef UTIL_KMS_H
-#define UTIL_KMS_H
+#ifndef __UTIL_PATTERN_H
+#define __UTIL_PATTERN_H
 
-const char *util_lookup_encoder_type_name(unsigned int type);
-const char *util_lookup_connector_status_name(unsigned int type);
-const char *util_lookup_connector_type_name(unsigned int type);
+enum util_fill_pattern {
+	UTIL_PATTERN_TILES,
+	UTIL_PATTERN_PLAIN,
+	UTIL_PATTERN_SMPTE,
+};
 
-int util_open(const char *device, const char *module);
+void util_fill_pattern(uint32_t format, enum util_fill_pattern pattern,
+		       void *planes[3], unsigned int width,
+		       unsigned int height, unsigned int stride);
 
-#endif /* UTIL_KMS_H */
+#endif /* UTIL_PATTERN_H */

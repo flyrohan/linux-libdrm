@@ -22,7 +22,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-
+#include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -96,6 +96,92 @@ static const struct util_format_info format_info[] = {
 	{ DRM_FORMAT_BGRA1010102, "BA30", MAKE_RGB_INFO(10, 2, 10, 12, 10, 22, 2, 0) },
 	{ DRM_FORMAT_BGRX1010102, "BX30", MAKE_RGB_INFO(10, 2, 10, 12, 10, 22, 0, 0) },
 };
+
+unsigned int util_format_bpp(unsigned int format,
+                  unsigned int width, unsigned int height)
+{
+        unsigned int bpp;
+
+	switch (format) {
+	case DRM_FORMAT_NV12:
+	case DRM_FORMAT_NV21:
+	case DRM_FORMAT_NV16:
+	case DRM_FORMAT_NV61:
+	case DRM_FORMAT_YUV420:
+	case DRM_FORMAT_YVU420:
+	case DRM_FORMAT_YUV422:
+	case DRM_FORMAT_YVU422:
+	case DRM_FORMAT_YUV444:
+	case DRM_FORMAT_YVU444:
+		bpp = 8;
+		break;
+
+	case DRM_FORMAT_ARGB4444:
+	case DRM_FORMAT_XRGB4444:
+	case DRM_FORMAT_ABGR4444:
+	case DRM_FORMAT_XBGR4444:
+	case DRM_FORMAT_RGBA4444:
+	case DRM_FORMAT_RGBX4444:
+	case DRM_FORMAT_BGRA4444:
+	case DRM_FORMAT_BGRX4444:
+	case DRM_FORMAT_ARGB1555:
+	case DRM_FORMAT_XRGB1555:
+	case DRM_FORMAT_ABGR1555:
+	case DRM_FORMAT_XBGR1555:
+	case DRM_FORMAT_RGBA5551:
+	case DRM_FORMAT_RGBX5551:
+	case DRM_FORMAT_BGRA5551:
+	case DRM_FORMAT_BGRX5551:
+	case DRM_FORMAT_RGB565:
+	case DRM_FORMAT_BGR565:
+	case DRM_FORMAT_UYVY:
+	case DRM_FORMAT_VYUY:
+	case DRM_FORMAT_YUYV:
+	case DRM_FORMAT_YVYU:
+		bpp = 16;
+		break;
+
+	case DRM_FORMAT_BGR888:
+	case DRM_FORMAT_RGB888:
+		bpp = 24;
+		break;
+
+	case DRM_FORMAT_ARGB8888:
+	case DRM_FORMAT_XRGB8888:
+	case DRM_FORMAT_ABGR8888:
+	case DRM_FORMAT_XBGR8888:
+	case DRM_FORMAT_RGBA8888:
+	case DRM_FORMAT_RGBX8888:
+	case DRM_FORMAT_BGRA8888:
+	case DRM_FORMAT_BGRX8888:
+	case DRM_FORMAT_ARGB2101010:
+	case DRM_FORMAT_XRGB2101010:
+	case DRM_FORMAT_ABGR2101010:
+	case DRM_FORMAT_XBGR2101010:
+	case DRM_FORMAT_RGBA1010102:
+	case DRM_FORMAT_RGBX1010102:
+	case DRM_FORMAT_BGRA1010102:
+	case DRM_FORMAT_BGRX1010102:
+		bpp = 32;
+		break;
+
+	default:
+		fprintf(stderr, "unsupported fourcc 0x%08x\n",  format);
+		return 0;
+	}
+
+        return bpp;
+}
+
+const char *util_format_name(uint32_t format)
+{
+	unsigned int i;
+
+        for (i = 0; i < ARRAY_SIZE(format_info); i++)
+		if (format_info[i].format == format)
+			return format_info[i].name;
+        return NULL;
+}
 
 uint32_t util_format_fourcc(const char *name)
 {

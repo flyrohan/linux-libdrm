@@ -23,8 +23,8 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef UTIL_FORMAT_H
-#define UTIL_FORMAT_H
+#ifndef __UTIL_FORMAT_H
+#define __UTIL_FORMAT_H
 
 struct util_color_component {
 	unsigned int length;
@@ -61,5 +61,7 @@ struct util_format_info {
 
 uint32_t util_format_fourcc(const char *name);
 const struct util_format_info *util_format_info_find(uint32_t format);
+unsigned int util_format_bpp(unsigned int format, unsigned int width, unsigned int height);
+const char *util_format_name(unsigned int format);
 
 #endif /* UTIL_FORMAT_H */
